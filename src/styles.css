@@ -1,0 +1,178 @@
+body {
+  margin: 0;
+  background: #f5f5f5;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-sider {
+  min-height: 100vh;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+  padding: 0 20px;
+  color: #fff;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #1677ff;
+  font-weight: 800;
+}
+
+.brand-title,
+.brand-subtitle {
+  display: block;
+  color: #fff;
+}
+
+.brand-subtitle {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 12px;
+}
+
+.runtime-card {
+  margin: 16px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.runtime-card,
+.runtime-card .ant-card-body,
+.runtime-card .ant-typography,
+.runtime-list {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 72px;
+  padding: 0 24px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid #f0f0f0;
+  backdrop-filter: blur(10px);
+}
+
+.app-header h3 {
+  margin: 0;
+}
+
+.global-search {
+  width: 320px;
+}
+
+.app-content {
+  padding: 24px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.selected-row td {
+  background: #e6f4ff !important;
+}
+
+.approval-card {
+  margin-top: 16px;
+  background: #fffbe6;
+  border-color: #ffe58f;
+}
+
+.approval-copy {
+  margin: 8px 0 0;
+}
+
+.top-gap {
+  margin-top: 16px;
+}
+
+.plugin-card {
+  min-height: 230px;
+}
+
+.artifact-preview {
+  min-height: 420px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.doc-preview,
+.landing-preview,
+.deck-preview {
+  min-height: 420px;
+  padding: 32px;
+}
+
+.doc-preview h1,
+.landing-preview h1,
+.deck-preview h1 {
+  max-width: 760px;
+}
+
+.landing-preview {
+  background: #e6f4ff;
+}
+
+.deck-preview {
+  display: grid;
+  align-content: center;
+}
+
+.cover-preview {
+  display: grid;
+  place-items: center;
+  min-height: 420px;
+  color: #fff;
+  background: linear-gradient(135deg, #1677ff, #13c2c2 48%, #722ed1);
+  font-size: 36px;
+  font-weight: 800;
+}
+
+.diff-preview {
+  min-height: 420px;
+  margin: 0;
+  padding: 32px;
+  color: #d9d9d9;
+  background: #141414;
+  white-space: pre-wrap;
+}
+
+.drawer-actions {
+  margin-top: 24px;
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    position: static;
+    align-items: flex-start;
+    flex-direction: column;
+    height: auto;
+    padding: 16px;
+  }
+
+  .global-search {
+    width: 100%;
+  }
+
+  .app-content {
+    padding: 16px;
+  }
+}
