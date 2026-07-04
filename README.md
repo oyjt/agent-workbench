@@ -204,6 +204,12 @@ https://oyjt.github.io/agent-workbench/
 
 GitHub 仓库的 Website 可以填写这个地址。页面会在无法连接 `/api` 时自动进入 `Static Local`，所有数据都保存在当前浏览器里。
 
+首次使用 GitHub Pages 需要在仓库里启用一次：
+
+1. 打开 `Settings -> Pages`。
+2. 在 `Build and deployment` 中把 `Source` 设为 `GitHub Actions`。
+3. 重新运行 `Deploy Static Pages` workflow，或向 `main` 再推送一次提交。
+
 ## 打包
 
 生成可上传或分发的压缩包：
@@ -281,8 +287,8 @@ Workflow 会执行：
 1. 安装依赖。
 2. `pnpm lint` 类型检查。
 3. `pnpm build:pages` 构建纯静态版本。
-4. 上传 `dist`。
-5. 部署到 GitHub Pages。
+4. 检查仓库是否已经启用 GitHub Pages。
+5. 已启用时上传 `dist` 并部署到 GitHub Pages；未启用时 workflow 保持成功并在日志里提示启用步骤。
 
 Pages 地址：
 

@@ -12,7 +12,7 @@
 - 工作区导入导出：支持导出当前工作区 JSON，也支持从 JSON 恢复到浏览器本地。
 - 自动打包：`pnpm package` 会生成 `.agent-workbench/release/agent-workbench-0.1.0.tgz`。
 - GitHub Actions：新增 Build and Package workflow，自动安装、初始化 SQLite、类型检查、构建、打包、启动生产服务做 smoke test，并上传 `.tgz` artifact。
-- GitHub Pages：新增 Deploy Static Pages workflow，构建 `/agent-workbench/` base 的静态版并发布到 Pages。
+- GitHub Pages：新增 Deploy Static Pages workflow，构建 `/agent-workbench/` base 的静态版；仓库 Pages 已启用时自动发布，未启用时保持构建成功并提示设置步骤。
 
 ## 已验证
 
@@ -33,6 +33,7 @@ node --check scripts/package.mjs
 - `GET /api/artifacts` 与 `POST /api/artifacts`。
 - `GET /api/workflows` 与 `POST /api/workflows`。
 - Pages 版 `dist/index.html` 资源路径包含 `/agent-workbench/`。
+- Deploy Static Pages workflow 会先检查 Pages site，避免仓库未启用 Pages 时把 CI 跑红。
 
 ## 仍属于 P2 的事项
 
