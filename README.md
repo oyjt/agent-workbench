@@ -303,8 +303,8 @@ Workflow 会执行：
 1. 安装依赖。
 2. `pnpm lint` 类型检查。
 3. `pnpm build:pages` 构建纯静态版本。
-4. 检查仓库是否已经启用 GitHub Pages。
-5. 已启用时上传 `dist` 并部署到 GitHub Pages；未启用时 workflow 保持成功并在日志里提示启用步骤。
+4. `actions/configure-pages` 配置 Pages。
+5. 上传 `dist` 并部署到 GitHub Pages。
 
 Pages 地址：
 
