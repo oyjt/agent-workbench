@@ -159,6 +159,29 @@ body {
   padding: 8px 0;
 }
 
+.dag-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.dag-level {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.dag-step {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #e6f4ff;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .artifact-preview {
   min-height: 420px;
   border: 1px solid #f0f0f0;

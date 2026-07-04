@@ -118,6 +118,25 @@ type ApprovalRecord = {
   reason: string;
 };
 
+type WorkflowStepRecord = {
+  id: string;
+  role: string;
+  task: string;
+  output?: string;
+  dependsOn: string[];
+  type?: "normal" | "approval" | "human_input";
+};
+
+type WorkflowPlan = {
+  key: string;
+  name: string;
+  description: string;
+  provider: string;
+  concurrency: number;
+  tags: string[];
+  steps: WorkflowStepRecord[];
+};
+
 type TaskFormValues = {
   title: string;
   prompt: string;
@@ -1139,20 +1158,235 @@ function DiffPreview() {
 }
 
 function WorkflowsPage() {
+  const templates = useMemo<WorkflowPlan[]>(
+    () => [
+      {
+        key: "product-review",
+        name: "产品需求评审",
+        description: "产品经理分析后，并行交给架构师、UX 研究员和安全工程师评审，最后汇总结论。",
+        provider: "codex-cli",
+        concurrency: 3,
+        tags: ["DAG", "并行评审", "人工结论"],
+        steps: [
+          { id: "analyze", role: "product/product-manager", task: "分析 PRD，提取目标、用户、约束和验收标准。", output: "requirements", dependsOn: [] },
+          { id: "tech_review", role: "engineering/software-architect", task: "评估技术可行性、模块边界和风险。", output: "tech_report", dependsOn: ["analyze"] },
+          { id: "design_review", role: "design/ux-researcher", task: "评估用户体验、信息架构和操作成本。", output: "design_report", dependsOn: ["analyze"] },
+          { id: "security_review", role: "security/security-engineer", task: "检查权限、数据、命令执行和外部账号风险。", output: "security_report", dependsOn: ["analyze"] },
+          { id: "summary", role: "product/product-manager", task: "综合评审结论，输出 Go / No-Go 与下一步任务。", output: "decision", dependsOn: ["tech_review", "design_review", "security_review"] },
+        ],
+      },
+      {
+        key: "content-publish",
+        name: "自媒体发布闭环",
+        description: "选题、正文、封面、品牌审核、发布包生成，浏览器写入前插入审批节点。",
+        provider: "deepseek",
+        concurrency: 2,
+        tags: ["内容", "审批", "Artifact"],
+        steps: [
+          { id: "research", role: "marketing/trend-researcher", task: "收集热榜、竞品和历史素材。", output: "research_pack", dependsOn: [] },
+          { id: "outline", role: "content/content-strategist", task: "生成大纲、角度和标题候选。", output: "outline", dependsOn: ["research"] },
+          { id: "draft", role: "content/writer", task: "撰写正文并标注知识引用。", output: "draft", dependsOn: ["outline"] },
+          { id: "cover", role: "design/visual-storyteller", task: "生成封面 brief 与配图建议。", output: "cover_brief", dependsOn: ["outline"] },
+          { id: "approval", role: "human", task: "确认浏览器写入草稿箱的能力授权。", dependsOn: ["draft", "cover"], type: "approval" },
+          { id: "handoff", role: "ops/publisher", task: "生成发布包和复盘清单。", output: "publish_pack", dependsOn: ["approval"] },
+        ],
+      },
+      {
+        key: "dev-pr-review",
+        name: "代码变更评审",
+        description: "代码审查、安全检查、性能检查三路并行，再由工程负责人汇总。",
+        provider: "codex-cli",
+        concurrency: 3,
+        tags: ["Coding", "PR", "安全"],
+        steps: [
+          { id: "scan", role: "engineering/code-reviewer", task: "读取 diff，识别行为变化和测试缺口。", output: "code_findings", dependsOn: [] },
+          { id: "security", role: "security/application-security", task: "并行检查鉴权、输入校验和 secret 风险。", output: "security_findings", dependsOn: ["scan"] },
+          { id: "performance", role: "engineering/performance-engineer", task: "并行检查性能、包体积和渲染成本。", output: "perf_findings", dependsOn: ["scan"] },
+          { id: "final", role: "engineering/tech-lead", task: "汇总阻塞项、建议和可合并条件。", output: "review_summary", dependsOn: ["security", "performance"] },
+        ],
+      },
+    ],
+    [],
+  );
+  const [prompt, setPrompt] = useState("把一个自媒体选题做成可发布的公众号文章，并生成封面 brief 和发布包");
+  const [provider, setProvider] = useState("codex-cli");
+  const [concurrency, setConcurrency] = useState(2);
+  const [activePlan, setActivePlan] = useState<WorkflowPlan>(templates[1]);
+
+  function composeFromPrompt() {
+    setActivePlan({
+      key: `compose_${Date.now()}`,
+      name: "AI 自动组队方案",
+      description: prompt,
+      provider,
+      concurrency,
+      tags: ["一句话编排", "自动组队", "待保存"],
+      steps: [
+        { id: "intent", role: "product/task-planner", task: "澄清目标、输出物和验收标准。", output: "task_brief", dependsOn: [] },
+        { id: "research", role: "research/domain-analyst", task: "收集任务相关背景、案例和约束。", output: "research", dependsOn: ["intent"] },
+        { id: "plan", role: "product/workflow-designer", task: "拆解阶段、选择 Agent Team 和所需连接器。", output: "workflow_plan", dependsOn: ["intent"] },
+        { id: "risk_gate", role: "security/capability-auditor", task: "识别高风险能力并生成 capability gate。", output: "risk_gate", dependsOn: ["plan"] },
+        { id: "draft", role: "content-or-code/executor", task: "根据计划生成首版产物或代码变更。", output: "artifact_draft", dependsOn: ["research", "risk_gate"] },
+        { id: "review", role: "quality/reviewer", task: "审核事实、质量、引用和发布风险。", output: "review_report", dependsOn: ["draft"] },
+      ],
+    });
+  }
+
   return (
-    <Card title="工作流模板" extra={<Button type="primary">新建流程</Button>}>
+    <Space orientation="vertical" size={16} className="full-width">
       <Row gutter={[16, 16]}>
-        {["自媒体周更", "编码需求实现", "运营日报"].map((name, index) => (
-          <Col xs={24} md={8} key={name}>
-            <Card title={name}>
-              <Text type="secondary">{index === 0 ? "Discovery → Generate → Critique → Handoff" : index === 1 ? "Plan → Patch → Test → Review" : "Schedule → Fetch → Summarize → Sync"}</Text>
-              <Progress percent={[88, 62, 74][index]} className="top-gap" />
-            </Card>
-          </Col>
-        ))}
+        <Col xs={24} xl={10}>
+          <Card title="一句话自动编排" extra={<Tag color="processing">AO-inspired</Tag>}>
+            <Form layout="vertical">
+              <Form.Item label="任务目标">
+                <Input.TextArea rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+              </Form.Item>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item label="Provider">
+                    <Select
+                      value={provider}
+                      onChange={setProvider}
+                      options={[
+                        { value: "codex-cli", label: "Codex CLI" },
+                        { value: "claude-code", label: "Claude Code" },
+                        { value: "deepseek", label: "DeepSeek API" },
+                        { value: "ollama", label: "Ollama Local" },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="并发度">
+                    <Segmented
+                      block
+                      options={[1, 2, 3, 4]}
+                      value={concurrency}
+                      onChange={(value) => setConcurrency(Number(value))}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Button type="primary" block onClick={composeFromPrompt}>生成工作流计划</Button>
+            </Form>
+          </Card>
+        </Col>
+        <Col xs={24} xl={14}>
+          <WorkflowDagPreview plan={activePlan} />
+        </Col>
       </Row>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={15}>
+          <Card title="内置工作流模板">
+            <div className="list-panel">
+              {templates.map((template) => (
+                <div className="list-row" key={template.key}>
+                  <div>
+                    <Text strong>{template.name}</Text>
+                    <Text type="secondary" className="row-meta">{template.description}</Text>
+                    <Space wrap className="row-meta">
+                      {template.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+                    </Space>
+                  </div>
+                  <Button onClick={() => setActivePlan(template)}>套用</Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} xl={9}>
+          <Card title="团队 Loadout">
+            <div className="list-panel">
+              {[
+                ["内容增长小队", "趋势研究员 / 内容策略师 / 品牌守护者 / 发布运营"],
+                ["研发评审小队", "架构师 / 安全工程师 / 性能工程师 / 测试分析师"],
+                ["产品上线小队", "产品经理 / UX 研究员 / 文案 / 视觉叙事师"],
+              ].map(([name, roles]) => (
+                <div className="list-row" key={name}>
+                  <div>
+                    <Text strong>{name}</Text>
+                    <Text type="secondary" className="row-meta">{roles}</Text>
+                  </div>
+                  <Tag color="blue">可复用</Tag>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+      <Card title="Resume / Feedback 返工入口">
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={8}>
+            <Text strong>恢复运行</Text>
+            <Paragraph type="secondary" className="compact-copy">从上次输出目录恢复已完成步骤，未变步骤跳过。</Paragraph>
+          </Col>
+          <Col xs={24} md={8}>
+            <Text strong>从指定步骤重跑</Text>
+            <Paragraph type="secondary" className="compact-copy">选择某个 step，把后续依赖重新排队。</Paragraph>
+          </Col>
+          <Col xs={24} md={8}>
+            <Text strong>带反馈返工</Text>
+            <Paragraph type="secondary" className="compact-copy">把上一版产物和修改意见注入目标 Agent，减少从零重写。</Paragraph>
+          </Col>
+        </Row>
+      </Card>
+    </Space>
+  );
+}
+
+function WorkflowDagPreview({ plan }: { plan: WorkflowPlan }) {
+  const levels = buildWorkflowLevels(plan.steps);
+  return (
+    <Card
+      title={plan.name}
+      extra={<Space wrap><Tag>{plan.provider}</Tag><Tag>并发 {plan.concurrency}</Tag></Space>}
+    >
+      <Paragraph type="secondary">{plan.description}</Paragraph>
+      <Space wrap>
+        {plan.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+      </Space>
+      <div className="dag-board">
+        {levels.map((level, index) => (
+          <div className="dag-level" key={`level_${index}`}>
+            <Text type="secondary">Layer {index + 1}</Text>
+            {level.map((step) => (
+              <div className="dag-step" key={step.id}>
+                <Flex justify="space-between" align="center">
+                  <Text strong>{step.id}</Text>
+                  {step.type ? <Tag color={step.type === "approval" ? "warning" : "purple"}>{step.type}</Tag> : <Tag color="success">normal</Tag>}
+                </Flex>
+                <Text type="secondary" className="row-meta">{step.role}</Text>
+                <Paragraph className="compact-copy">{step.task}</Paragraph>
+                {step.dependsOn.length > 0 ? <Text type="secondary">depends_on: {step.dependsOn.join(", ")}</Text> : <Text type="secondary">root step</Text>}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </Card>
   );
+}
+
+function buildWorkflowLevels(steps: WorkflowStepRecord[]) {
+  const remaining = new Map(steps.map((step) => [step.id, step]));
+  const completed = new Set<string>();
+  const levels: WorkflowStepRecord[][] = [];
+
+  while (remaining.size > 0) {
+    const level = Array.from(remaining.values()).filter((step) => step.dependsOn.every((dep) => completed.has(dep)));
+    if (level.length === 0) {
+      levels.push(Array.from(remaining.values()));
+      break;
+    }
+
+    levels.push(level);
+    for (const step of level) {
+      completed.add(step.id);
+      remaining.delete(step.id);
+    }
+  }
+
+  return levels;
 }
 
 function AssetsPage() {

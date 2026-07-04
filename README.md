@@ -27,7 +27,12 @@
 - 团队知识库新增草稿，支持类型、标签和可见范围
 - MCP / CLI 连接器注册，支持风险等级和默认绑定 Agent
 - Workflow Plugin 启动前能力确认，并生成待审批任务
+- 工作流页支持一句话自动编排、DAG 预览、模板套用、团队 Loadout 和返工入口
 - Artifact Studio 基础预览与 manifest 信息展示
+
+## 调研记录
+
+- [agency-orchestrator 调研与应用记录](docs/research/agency-orchestrator-analysis.md)
 
 ## 本地运行
 
