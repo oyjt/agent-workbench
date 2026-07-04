@@ -10,6 +10,7 @@
     "start": "node --disable-warning=ExperimentalWarning server/index.mjs",
     "db:init": "node --disable-warning=ExperimentalWarning server/index.mjs --init",
     "build": "tsc -b && vite build",
+    "build:pages": "GITHUB_PAGES=true pnpm build",
     "package": "pnpm build && node scripts/package.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "tsc -b --pretty false"

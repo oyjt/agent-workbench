@@ -44,7 +44,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   appendRunEvent,
   checkApiConnector,
@@ -230,6 +230,25 @@ type ConnectorFormValues = {
   risk: RiskLevel;
   binding: string;
 };
+
+type WorkspaceMode = "api" | "static";
+
+type WorkbenchSnapshot = {
+  version: 1;
+  exportedAt: string;
+  tasks: Task[];
+  selectedTaskKey?: string;
+  agents: AgentRecord[];
+  agentTeams: AgentTeamRecord[];
+  knowledgeItems: KnowledgeItem[];
+  connectors: ConnectorRecord[];
+  approvals: ApprovalRecord[];
+  artifacts: ArtifactRecord[];
+  savedWorkflows: WorkflowPlan[];
+  runEvents: Record<string, ApiRunEvent[]>;
+};
+
+const STATIC_WORKSPACE_KEY = "agent-workbench-static-workspace-v1";
 
 const pageMeta: Record<PageKey, { title: string; subtitle: string }> = {
   overview: { title: "工作台", subtitle: "任务、审批、产物和运行状态集中管理" },
@@ -442,6 +461,54 @@ const initialArtifacts: ArtifactRecord[] = [
   { key: "asset_diff", file: "capability-gate.diff", type: "DIFF", source: "Codex", summary: "能力闸口变更摘要", path: "artifact://demo/capability-gate.diff", updatedAt: "1 小时前" },
 ];
 
+const staticSkills: ApiSkill[] = [
+  {
+    id: "content-planner",
+    name: "content-planner",
+    description: "Plan self-media topics, outlines, references, and publishing packages.",
+    path: "skills/content-planner/SKILL.md",
+    permissions: ["network:read", "knowledge:read", "files:write"],
+    risk: "medium",
+  },
+  {
+    id: "code-implementer",
+    name: "code-implementer",
+    description: "Implement scoped code changes, run checks, and summarize diffs.",
+    path: "skills/code-implementer/SKILL.md",
+    permissions: ["files:write", "cli:run"],
+    risk: "high",
+  },
+];
+
+const staticWorkflowPlugins: ApiWorkflowPlugin[] = [
+  {
+    id: "weekly-media-post",
+    name: "自媒体周更",
+    description: "热榜采集、正文生成、封面 brief、审核和发布包。",
+    version: "static",
+    path: "plugins/weekly-media-post",
+    skills: ["content-planner", "web-access"],
+    mcpTools: ["browser.search", "filesystem.read"],
+    cliCommands: [],
+    knowledgeScopes: ["BRAND.md", "CONTENT.md", "发布 SOP"],
+    capabilities: ["network:read", "knowledge:read", "files:write", "browser:input"],
+    pipeline: ["discovery", "plan", "generate", "critique", "handoff"],
+  },
+  {
+    id: "coding-task",
+    name: "代码需求实现",
+    description: "需求澄清、代码修改、测试、diff 审批和变更摘要。",
+    version: "static",
+    path: "plugins/coding-task",
+    skills: ["code-implementer"],
+    mcpTools: ["filesystem.read", "github.pull_request"],
+    cliCommands: ["pnpm build"],
+    knowledgeScopes: ["架构决策", "代码文档"],
+    capabilities: ["files:write", "cli:run", "mcp:read"],
+    pipeline: ["plan", "patch", "test", "review", "handoff"],
+  },
+];
+
 function statusTag(status: TaskStatus) {
   const meta = taskStatusMeta[status];
   return <Tag color={meta.color}>{meta.label}</Tag>;
@@ -585,8 +652,64 @@ function formatTime(value: string) {
   return Number.isNaN(Date.parse(value)) ? value : new Date(value).toLocaleTimeString();
 }
 
+function createBrowserId(prefix: string) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createBrowserEvent(runId: string, type: string, payload: unknown): ApiRunEvent {
+  return {
+    id: createBrowserId("evt"),
+    runId,
+    type,
+    payload,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function createArtifactRecord(task: Task, runId: string, kind: "markdown" | "diff" = task.runtime === "Codex" ? "diff" : "markdown"): ArtifactRecord {
+  const extension = kind === "diff" ? "diff.md" : "draft.md";
+  return {
+    key: createBrowserId("artifact"),
+    file: `${task.title} · ${extension}`,
+    type: kind.toUpperCase(),
+    source: task.runtime,
+    summary: kind === "diff" ? "浏览器本地模拟的代码变更摘要。" : "浏览器本地模拟的内容草稿。",
+    path: `browser://artifacts/${task.key}/${extension}`,
+    updatedAt: nowLabel(),
+  };
+}
+
+function createStaticRunEvents(task: Task, runId: string, artifact: ArtifactRecord) {
+  return [
+    createBrowserEvent(runId, "runtime.started", { adapter: "browser-static", target: task.target }),
+    createBrowserEvent(runId, "agent.started", { runtime: task.runtime, target: task.target }),
+    createBrowserEvent(runId, "message.delta", { role: "assistant", text: `静态模式已模拟执行：${task.title}` }),
+    createBrowserEvent(runId, "agent.completed", { target: task.target }),
+    createBrowserEvent(runId, artifact.type === "DIFF" ? "adapter.codex.diff" : "artifact.created", {
+      artifactId: artifact.key,
+      title: artifact.file,
+      summary: artifact.summary,
+    }),
+    createBrowserEvent(runId, "run.status_changed", { status: "done" }),
+  ];
+}
+
+function loadStaticSnapshot() {
+  try {
+    const raw = window.localStorage.getItem(STATIC_WORKSPACE_KEY);
+    if (!raw) return null;
+    const snapshot = JSON.parse(raw) as WorkbenchSnapshot;
+    return snapshot.version === 1 ? snapshot : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [messageApi, contextHolder] = message.useMessage();
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("api");
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
   const [page, setPage] = useState<PageKey>("overview");
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [selectedTask, setSelectedTask] = useState<Task>(initialTasks[0]);
@@ -611,6 +734,36 @@ export default function App() {
     open: false,
     kind: "MCP",
   });
+
+  function currentSnapshot(): WorkbenchSnapshot {
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      tasks,
+      selectedTaskKey: selectedTask.key,
+      agents,
+      agentTeams,
+      knowledgeItems,
+      connectors,
+      approvals,
+      artifacts,
+      savedWorkflows,
+      runEvents,
+    };
+  }
+
+  function applySnapshot(snapshot: WorkbenchSnapshot) {
+    setTasks(snapshot.tasks.length > 0 ? snapshot.tasks : initialTasks);
+    setSelectedTask(snapshot.tasks.find((task) => task.key === snapshot.selectedTaskKey) ?? snapshot.tasks[0] ?? initialTasks[0]);
+    setAgents(snapshot.agents.length > 0 ? snapshot.agents : initialAgents);
+    setAgentTeams(snapshot.agentTeams.length > 0 ? snapshot.agentTeams : initialAgentTeams);
+    setKnowledgeItems(snapshot.knowledgeItems.length > 0 ? snapshot.knowledgeItems : initialKnowledgeItems);
+    setConnectors(snapshot.connectors.length > 0 ? snapshot.connectors : initialConnectors);
+    setApprovals(snapshot.approvals);
+    setArtifacts(snapshot.artifacts.length > 0 ? snapshot.artifacts : initialArtifacts);
+    setSavedWorkflows(snapshot.savedWorkflows);
+    setRunEvents(snapshot.runEvents);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -653,9 +806,17 @@ export default function App() {
         setApprovals(apiApprovals);
         setSkills(skillResult.skills);
         setWorkflowPlugins(pluginResult.plugins);
+        setWorkspaceMode("api");
+        setWorkspaceLoaded(true);
       } catch {
         if (!cancelled) {
-          messageApi.warning("API 未启动，当前使用前端演示数据");
+          const snapshot = loadStaticSnapshot();
+          if (snapshot) applySnapshot(snapshot);
+          setSkills(staticSkills);
+          setWorkflowPlugins(staticWorkflowPlugins);
+          setWorkspaceMode("static");
+          setWorkspaceLoaded(true);
+          messageApi.warning(snapshot ? "API 未启动，已恢复浏览器本地工作区" : "API 未启动，当前使用浏览器本地模式");
         }
       }
     }
@@ -668,7 +829,12 @@ export default function App() {
   }, [messageApi]);
 
   useEffect(() => {
-    if (!selectedTask.runId) return;
+    if (!workspaceLoaded || workspaceMode !== "static") return;
+    window.localStorage.setItem(STATIC_WORKSPACE_KEY, JSON.stringify(currentSnapshot()));
+  }, [workspaceLoaded, workspaceMode, tasks, selectedTask, agents, agentTeams, knowledgeItems, connectors, approvals, artifacts, savedWorkflows, runEvents]);
+
+  useEffect(() => {
+    if (!selectedTask.runId || workspaceMode === "static") return;
 
     const eventSource = new EventSource(`/api/runs/${selectedTask.runId}/events`);
 
@@ -686,7 +852,7 @@ export default function App() {
     };
 
     return () => eventSource.close();
-  }, [selectedTask.runId]);
+  }, [selectedTask.runId, workspaceMode]);
 
   const filteredTasks = useMemo(() => {
     if (taskFilter === "全部") return tasks;
@@ -761,6 +927,15 @@ export default function App() {
       setRunEvents((current) => ({ ...current, [result.runId]: result.events }));
       persisted = true;
     } catch {
+      setWorkspaceMode("static");
+      runId = createBrowserId("run");
+      setRunEvents((current) => ({
+        ...current,
+        [runId!]: [
+          createBrowserEvent(runId!, "task.created", { taskId: taskKey, title: values.title, targetType: values.targetType, targetId: values.targetId }),
+          createBrowserEvent(runId!, "run.created", { runId, status }),
+        ],
+      }));
       persisted = false;
     }
 
@@ -800,7 +975,7 @@ export default function App() {
     if (persisted) {
       messageApi.success("任务已写入 SQLite，并创建 task / run / event");
     } else {
-      messageApi.warning("API 未启动，已创建前端临时任务");
+      messageApi.warning("API 未启动，任务已保存到浏览器本地");
     }
   }
 
@@ -812,6 +987,7 @@ export default function App() {
       agent = agentFromApi(result.agent);
       messageApi.success("Agent 已写入 SQLite");
     } catch {
+      setWorkspaceMode("static");
       agent = {
         key: `agent_${Date.now()}`,
         name: values.name,
@@ -823,7 +999,7 @@ export default function App() {
         permissionProfile: values.permissionProfile,
         status: "启用",
       };
-      messageApi.warning("API 未启动，已创建前端临时 Agent");
+      messageApi.warning("API 未启动，Agent 已保存到浏览器本地");
     }
 
     setAgents((current) => [agent, ...current]);
@@ -849,6 +1025,7 @@ export default function App() {
       team = teamFromApi(result.team);
       messageApi.success("Agent Team 已写入 SQLite");
     } catch {
+      setWorkspaceMode("static");
       team = {
         key: `team_${Date.now()}`,
         name: values.name,
@@ -857,7 +1034,7 @@ export default function App() {
         status: "启用",
         members,
       };
-      messageApi.warning("API 未启动，已创建前端临时 Agent Team");
+      messageApi.warning("API 未启动，Agent Team 已保存到浏览器本地");
     }
 
     setAgentTeams((current) => [team, ...current]);
@@ -873,6 +1050,7 @@ export default function App() {
       item = knowledgeFromApi(result.knowledgeItem);
       messageApi.success("知识条目已写入 SQLite");
     } catch {
+      setWorkspaceMode("static");
       item = {
         key: `knowledge_${Date.now()}`,
         title: values.title,
@@ -882,7 +1060,7 @@ export default function App() {
         tags: values.tags,
         visibility: values.visibility,
       };
-      messageApi.warning("API 未启动，已创建前端临时知识条目");
+      messageApi.warning("API 未启动，知识条目已保存到浏览器本地");
     }
 
     setKnowledgeItems((current) => [item, ...current]);
@@ -898,6 +1076,7 @@ export default function App() {
       connector = connectorFromApi(result.connector);
       messageApi.success(`${kind} 连接器已写入 SQLite`);
     } catch {
+      setWorkspaceMode("static");
       connector = {
         key: `${kind.toLowerCase()}_${Date.now()}`,
         kind,
@@ -907,7 +1086,7 @@ export default function App() {
         risk: values.risk,
         binding: values.binding,
       };
-      messageApi.warning("API 未启动，已创建前端临时连接器");
+      messageApi.warning("API 未启动，连接器已保存到浏览器本地");
     }
 
     setConnectors((current) => [connector, ...current]);
@@ -916,6 +1095,18 @@ export default function App() {
   }
 
   async function checkConnector(connectorKey: string) {
+    if (workspaceMode === "static") {
+      setConnectors((current) =>
+        current.map((connector) =>
+          connector.key === connectorKey
+            ? { ...connector, status: connector.kind === "CLI" ? "CLI" : "在线" }
+            : connector,
+        ),
+      );
+      messageApi.success("静态模式已模拟连接器自检");
+      return;
+    }
+
     try {
       const result = await checkApiConnector(connectorKey);
       setConnectors((current) =>
@@ -932,6 +1123,44 @@ export default function App() {
   }
 
   async function invokeConnector(connectorKey: string) {
+    if (workspaceMode === "static") {
+      const connector = connectors.find((item) => item.key === connectorKey);
+      if (!connector) return;
+      if (connector.risk !== "low") {
+        setApprovals((current) => [
+          {
+            key: createBrowserId("approval"),
+            taskKey: selectedTask.key,
+            title: `${connector.kind} 调用审批：${connector.name}`,
+            source: `${connector.kind} Connector`,
+            risk: connector.risk,
+            capabilities: connector.kind === "CLI" ? ["cli:run"] : ["mcp:call"],
+            status: "pending",
+            reason: `${connector.name} 风险等级为 ${connector.risk}，静态模式下仍要求人工确认。`,
+          },
+          ...current,
+        ]);
+        setApprovalOpen(true);
+        messageApi.warning("连接器调用需要审批，已加入浏览器本地队列");
+        return;
+      }
+      if (selectedTask.runId) {
+        setRunEvents((current) => ({
+          ...current,
+          [selectedTask.runId!]: [
+            ...(current[selectedTask.runId!] ?? []),
+            createBrowserEvent(selectedTask.runId!, connector.kind === "CLI" ? "cli.completed" : "mcp.tool_call.completed", {
+              connectorId: connector.key,
+              name: connector.name,
+              mode: "static",
+            }),
+          ],
+        }));
+      }
+      messageApi.success("静态模式已模拟连接器调用");
+      return;
+    }
+
     try {
       const result = await invokeApiConnector(connectorKey, selectedTask.key);
       if (result.approval) {
@@ -947,6 +1176,8 @@ export default function App() {
   }
 
   async function refreshArtifacts() {
+    if (workspaceMode === "static") return;
+
     try {
       const result = await listApiArtifacts();
       const apiArtifacts = result.artifacts.map(artifactFromApi);
@@ -957,6 +1188,23 @@ export default function App() {
   }
 
   async function createManualArtifact() {
+    if (workspaceMode === "static") {
+      setArtifacts((current) => [
+        {
+          key: createBrowserId("artifact"),
+          file: `${selectedTask.title} · handoff.md`,
+          type: "MARKDOWN",
+          source: selectedTask.runtime,
+          summary: "浏览器本地登记的交付摘要。",
+          path: `browser://artifacts/${selectedTask.key}/handoff.md`,
+          updatedAt: nowLabel(),
+        },
+        ...current,
+      ]);
+      messageApi.success("Artifact 已保存到浏览器本地");
+      return;
+    }
+
     try {
       const result = await createApiArtifact({
         taskId: selectedTask.key,
@@ -976,6 +1224,12 @@ export default function App() {
   }
 
   async function saveWorkflow(plan: WorkflowPlan) {
+    if (workspaceMode === "static") {
+      setSavedWorkflows((current) => [{ ...plan, key: createBrowserId("workflow") }, ...current]);
+      messageApi.success("工作流已保存到浏览器本地");
+      return;
+    }
+
     try {
       const result = await createApiWorkflow({
         name: plan.name,
@@ -995,32 +1249,61 @@ export default function App() {
   async function updateTaskStatus(taskKey: string, status: TaskStatus) {
     let nextStatus = status;
     const task = tasks.find((item) => item.key === taskKey);
+    let nextRunId = task?.runId;
 
-    try {
+    if (workspaceMode === "static" && task) {
       if (status === "running") {
-        const result = await startApiTask(taskKey);
-        nextStatus = normalizeTaskStatus(result.status);
-        if (nextStatus === "done") void refreshArtifacts();
-        if (result.waitingApprovalId) {
-          messageApi.warning("任务仍有待审批动作，已写入 approval.waiting 事件");
-        }
-      } else if (task?.runId) {
-        await updateApiTaskStatus(taskKey, status);
+        nextRunId = task.runId ?? createBrowserId("run");
+        const runnableTask = { ...task, runId: nextRunId };
+        const artifact = createArtifactRecord(runnableTask, nextRunId);
+        const events = createStaticRunEvents(runnableTask, nextRunId, artifact);
+        setRunEvents((current) => ({ ...current, [nextRunId!]: [...(current[nextRunId!] ?? []), ...events] }));
+        setArtifacts((current) => [artifact, ...current]);
+        nextStatus = "done";
       }
-    } catch {
-      messageApi.warning("API 未启动，任务状态仅在前端更新");
+    } else {
+      try {
+        if (status === "running") {
+          const result = await startApiTask(taskKey);
+          nextStatus = normalizeTaskStatus(result.status);
+          if (nextStatus === "done") void refreshArtifacts();
+          if (result.waitingApprovalId) {
+            messageApi.warning("任务仍有待审批动作，已写入 approval.waiting 事件");
+          }
+        } else if (task?.runId) {
+          await updateApiTaskStatus(taskKey, status);
+        }
+      } catch {
+        setWorkspaceMode("static");
+        messageApi.warning("API 未启动，任务状态已保存到浏览器本地");
+      }
     }
 
     setTasks((current) =>
-      current.map((task) => (task.key === taskKey ? { ...task, status: nextStatus, updatedAt: nowLabel() } : task)),
+      current.map((task) => (task.key === taskKey ? { ...task, runId: nextRunId, status: nextStatus, updatedAt: nowLabel() } : task)),
     );
-    setSelectedTask((current) => (current.key === taskKey ? { ...current, status: nextStatus, updatedAt: nowLabel() } : current));
+    setSelectedTask((current) => (current.key === taskKey ? { ...current, runId: nextRunId, status: nextStatus, updatedAt: nowLabel() } : current));
     messageApi.info(`任务状态已更新为：${taskStatusMeta[nextStatus].label}`);
   }
 
   async function appendDiagnosticEvent(task: Task) {
     if (!task.runId) {
       messageApi.warning("这个任务还没有持久化 run，无法追加真实事件");
+      return;
+    }
+
+    if (workspaceMode === "static") {
+      setRunEvents((current) => ({
+        ...current,
+        [task.runId!]: [
+          ...(current[task.runId!] ?? []),
+          createBrowserEvent(task.runId!, "message.delta", {
+            role: "assistant",
+            text: `静态模式事件验证：${new Date().toLocaleTimeString()}`,
+          }),
+        ],
+      }));
+      messageApi.success("事件已保存到浏览器本地");
       return;
     }
 
@@ -1044,7 +1327,7 @@ export default function App() {
     const approval = approvals.find((item) => item.key === approvalKey);
     const apiDecision = decision === "allowed" ? "allow_once" : "deny";
 
-    if (approval?.key) {
+    if (approval?.key && workspaceMode !== "static") {
       try {
         await respondApiApproval(approval.key, apiDecision);
       } catch {
@@ -1097,9 +1380,45 @@ export default function App() {
     messageApi.success("插件运行草稿已创建，等待 capability gate 审批");
   }
 
+  function exportWorkspace() {
+    const snapshot = currentSnapshot();
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `agent-workbench-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importWorkspace(file?: File) {
+    if (!file) return;
+    try {
+      const snapshot = JSON.parse(await file.text()) as WorkbenchSnapshot;
+      if (snapshot.version !== 1) throw new Error("unsupported_snapshot");
+      applySnapshot(snapshot);
+      setSkills(staticSkills);
+      setWorkflowPlugins(staticWorkflowPlugins);
+      setWorkspaceMode("static");
+      setWorkspaceLoaded(true);
+      messageApi.success("工作区已导入浏览器本地");
+    } catch {
+      messageApi.error("导入失败，请确认 JSON 来自 Agent Workbench");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }
+
   return (
     <>
       {contextHolder}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json"
+        hidden
+        onChange={(event) => void importWorkspace(event.target.files?.[0])}
+      />
       <Layout className="app-shell">
         <Sider width={256} breakpoint="lg" collapsedWidth={0} className="app-sider">
           <div className="brand">
@@ -1136,7 +1455,10 @@ export default function App() {
               <Text type="secondary">{pageMeta[page].subtitle}</Text>
             </div>
             <Space wrap>
+              <Tag color={workspaceMode === "api" ? "success" : "warning"}>{workspaceMode === "api" ? "SQLite API" : "Static Local"}</Tag>
               <Input.Search placeholder="搜索任务、Agent、插件、知识" className="global-search" />
+              <Button onClick={exportWorkspace}>导出</Button>
+              <Button onClick={() => importInputRef.current?.click()}>导入</Button>
               <Button onClick={() => setApprovalOpen(true)}>审批队列</Button>
               <Button type="primary" onClick={() => setTaskModalOpen(true)}>新建任务</Button>
             </Space>

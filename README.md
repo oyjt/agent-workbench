@@ -7,7 +7,7 @@ Agent Workbench 是一个本地优先的通用 Agent 工作台，用来统一管
 ## 当前状态
 
 - P0 已完成：任务中心、SSE 运行事件、Agent CRUD、Agent Team 串行执行、知识库、MCP / CLI 连接器、审批、Skill 扫描、Workflow Plugin 扫描。
-- P1 已启动并完成第一批闭环：Artifact 持久化、Workflow 持久化、生产静态服务、自动打包、GitHub Actions 构建与 smoke test。
+- P1 已启动并完成第一批闭环：Artifact 持久化、Workflow 持久化、浏览器本地静态模式、生产静态服务、自动打包、GitHub Actions 构建与 smoke test、GitHub Pages 静态部署。
 - 当前实现适合本地迭代和产品验证，Runtime Adapter 与 MCP client 仍是简化版本。
 
 ## 技术栈
@@ -19,6 +19,29 @@ Agent Workbench 是一个本地优先的通用 Agent 工作台，用来统一管
 - Node.js HTTP server
 - Node.js `node:sqlite`
 - pnpm 9
+
+## 运行模式
+
+### Static Local Mode
+
+纯静态模式适合 GitHub Pages、在线 Demo 和轻量个人工作台：
+
+- 前端完全静态托管。
+- API 不可用时自动切换到 `Static Local`。
+- 数据保存到浏览器 `localStorage`。
+- 支持任务、Agent、Agent Team、知识库、连接器、审批、Artifact、Workflow 的本地增删与模拟运行。
+- 支持导出/导入工作区 JSON。
+
+静态模式不能直接执行真实 CLI、访问本机 SQLite、扫描本地目录或运行 MCP stdio server。
+
+### SQLite API Mode
+
+完整本地模式适合真实使用和开发：
+
+- Node server 提供 API、SSE 和 `dist` 静态文件。
+- 数据保存到 `.agent-workbench/data/workbench.sqlite`。
+- 支持低风险 CLI 真实执行。
+- 后续真实 MCP client、文件写入、Runtime Adapter 都会优先接入这个模式。
 
 ## 核心功能
 
@@ -163,6 +186,24 @@ AGENT_WORKBENCH_API_PORT=8787
 AGENT_WORKBENCH_DATA_DIR=.agent-workbench/data
 ```
 
+## 纯静态运行
+
+构建 GitHub Pages 版本：
+
+```bash
+pnpm build:pages
+```
+
+该命令会使用 `/agent-workbench/` 作为 Vite `base`，产物仍输出到 `dist`。
+
+部署后访问：
+
+```text
+https://oyjt.github.io/agent-workbench/
+```
+
+GitHub 仓库的 Website 可以填写这个地址。页面会在无法连接 `/api` 时自动进入 `Static Local`，所有数据都保存在当前浏览器里。
+
 ## 打包
 
 生成可上传或分发的压缩包：
@@ -222,6 +263,33 @@ Workflow 会执行：
 9. `curl /api/health` 和 `/` 做 smoke test。
 10. 上传 `agent-workbench-package` artifact。
 
+## GitHub Pages 静态部署
+
+已配置 GitHub Pages workflow：
+
+```text
+.github/workflows/deploy-pages.yml
+```
+
+触发条件：
+
+- push 到 `main`
+- 手动 `workflow_dispatch`
+
+Workflow 会执行：
+
+1. 安装依赖。
+2. `pnpm lint` 类型检查。
+3. `pnpm build:pages` 构建纯静态版本。
+4. 上传 `dist`。
+5. 部署到 GitHub Pages。
+
+Pages 地址：
+
+```text
+https://oyjt.github.io/agent-workbench/
+```
+
 ## 常用命令
 
 ```bash
@@ -230,6 +298,7 @@ pnpm api          # 仅启动 API
 pnpm dev          # 启动 Vite 开发服务
 pnpm lint         # TypeScript 类型检查
 pnpm build        # 构建前端
+pnpm build:pages  # 构建 GitHub Pages 静态版
 pnpm start        # 生产模式运行 API + dist
 pnpm package      # 构建并打包 release tgz
 ```
@@ -265,12 +334,14 @@ pnpm package      # 构建并打包 release tgz
 - 当前没有用户体系和多租户权限隔离。
 - 当前没有 Secret 管理，不要把真实密钥写入仓库或 SQLite。
 - MCP 调用仍是模拟 health-call，真实 MCP client 属于后续阶段。
+- Static Local Mode 的数据只存在当前浏览器，换浏览器或清缓存前请先导出工作区 JSON。
 
 ## 后续路线
 
 ### P1 后续
 
 - Artifact 文件内容写入 `.agent-workbench/artifacts` 并做版本管理。
+- IndexedDB 替代 `localStorage`，承载更大的离线数据。
 - Workflow YAML 导入导出。
 - 从指定 step 重跑与 feedback 返工。
 - 更细的 connector allowlist。
