@@ -20,6 +20,7 @@
 
 ## 当前已实现
 
+- 本地 Workbench API，使用 SQLite 持久化 task / run / event
 - 工作台任务队列、任务详情、运行事件和状态操作
 - 新建任务表单，支持 Agent、Agent Team、Workflow Plugin 三类目标
 - 审批队列与 capability gate 记录，支持允许或拒绝
@@ -33,17 +34,23 @@
 ## 调研记录
 
 - [agency-orchestrator 调研与应用记录](docs/research/agency-orchestrator-analysis.md)
+- [Workbench API 与 SQLite 说明](docs/backend-api.md)
 
 ## 本地运行
 
 ```bash
 pnpm install
+pnpm api
 pnpm dev
 ```
+
+默认 API 地址为 `http://127.0.0.1:8787`，Vite 会把 `/api` 代理到该地址。
+SQLite 数据文件默认位于 `.agent-workbench/data/workbench.sqlite`，该目录不会进入 Git。
 
 ## 验证
 
 ```bash
+pnpm db:init
 pnpm lint
 pnpm build
 ```

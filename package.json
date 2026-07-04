@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "api": "node --disable-warning=ExperimentalWarning server/index.mjs",
+    "db:init": "node --disable-warning=ExperimentalWarning server/index.mjs --init",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "tsc -b --pretty false"

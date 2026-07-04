@@ -45,6 +45,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useMemo, useState } from "react";
+import { createApiTask } from "./api";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -376,6 +377,11 @@ function nowLabel() {
   return "刚刚";
 }
 
+function normalizeTaskStatus(status: string): TaskStatus {
+  const allowed: TaskStatus[] = ["queued", "approval", "running", "paused", "done", "failed", "cancelled"];
+  return allowed.includes(status as TaskStatus) ? (status as TaskStatus) : "queued";
+}
+
 export default function App() {
   const [messageApi, contextHolder] = message.useMessage();
   const [page, setPage] = useState<PageKey>("overview");
@@ -440,17 +446,40 @@ export default function App() {
     { key: "settings", icon: <SettingOutlined />, label: "设置" },
   ];
 
-  function createTask(values: TaskFormValues) {
+  async function createTask(values: TaskFormValues) {
     const agent = agents.find((item) => item.key === values.targetId);
     const target = values.targetType === "plugin" ? values.targetId : agent?.name ?? "自媒体内容团队";
     const runtime = values.targetType === "plugin" ? "BrowserOps" : agent?.runtime ?? "BrowserOps";
+    const owner = values.targetType === "agent" ? target : "内容团队";
+    let taskKey = `task_${Date.now()}`;
+    let status: TaskStatus = values.requiresApproval ? "approval" : "queued";
+    let persisted = false;
+
+    try {
+      const result = await createApiTask({
+        title: values.title,
+        prompt: values.prompt,
+        targetType: values.targetType,
+        targetId: values.targetId,
+        owner,
+        runtime,
+        priority: values.priority,
+        requiresApproval: values.requiresApproval,
+      });
+      taskKey = result.task.id;
+      status = normalizeTaskStatus(result.task.status);
+      persisted = true;
+    } catch {
+      persisted = false;
+    }
+
     const newTask: Task = {
-      key: `task_${Date.now()}`,
+      key: taskKey,
       title: values.title,
       description: values.prompt,
-      owner: values.targetType === "agent" ? target : "内容团队",
+      owner,
       runtime,
-      status: values.requiresApproval ? "approval" : "queued",
+      status,
       target,
       updatedAt: nowLabel(),
     };
@@ -476,7 +505,11 @@ export default function App() {
       ]);
     }
 
-    messageApi.success("任务草稿已创建，并加入工作台队列");
+    if (persisted) {
+      messageApi.success("任务已写入 SQLite，并创建 task / run / event");
+    } else {
+      messageApi.warning("API 未启动，已创建前端临时任务");
+    }
   }
 
   function createAgent(values: AgentFormValues) {
@@ -1529,7 +1562,7 @@ function TaskModal({
   open: boolean;
   agents: AgentRecord[];
   onCancel: () => void;
-  onCreate: (values: TaskFormValues) => void;
+  onCreate: (values: TaskFormValues) => void | Promise<void>;
 }) {
   const [form] = Form.useForm<TaskFormValues>();
   const targetType = Form.useWatch("targetType", form) ?? "agent_team";
@@ -1571,7 +1604,7 @@ function TaskModal({
           }
         }}
         onFinish={(values) => {
-          onCreate(values);
+          void onCreate(values);
           form.resetFields();
         }}
       >
