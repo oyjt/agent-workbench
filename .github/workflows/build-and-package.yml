@@ -1,0 +1,60 @@
+name: Build and Package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize SQLite schema
+        run: pnpm db:init
+
+      - name: Type check
+        run: pnpm lint
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Package release archive
+        run: pnpm package
+
+      - name: Smoke test production server
+        run: |
+          AGENT_WORKBENCH_API_PORT=8790 pnpm start > server.log 2>&1 &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID" EXIT
+          sleep 2
+          curl --fail http://127.0.0.1:8790/api/health
+          curl --fail http://127.0.0.1:8790/
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-workbench-package
+          path: .agent-workbench/release/*.tgz

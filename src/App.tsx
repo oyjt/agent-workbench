@@ -50,23 +50,27 @@ import {
   checkApiConnector,
   createApiAgent,
   createApiAgentTeam,
+  createApiArtifact,
   createApiConnector,
   createApiKnowledgeItem,
   createApiTask,
+  createApiWorkflow,
   invokeApiConnector,
   listApiAgents,
   listApiAgentTeams,
   listApiApprovals,
+  listApiArtifacts,
   listApiConnectors,
   listApiKnowledgeItems,
   listApiTasks,
+  listApiWorkflows,
   respondApiApproval,
   scanApiPlugins,
   scanApiSkills,
   startApiTask,
   updateApiTaskStatus,
 } from "./api";
-import type { ApiAgent, ApiAgentTeam, ApiApproval, ApiConnector, ApiKnowledgeItem, ApiRunEvent, ApiSkill, ApiTask, ApiWorkflowPlugin } from "./api";
+import type { ApiAgent, ApiAgentTeam, ApiApproval, ApiArtifact, ApiConnector, ApiKnowledgeItem, ApiRunEvent, ApiSkill, ApiTask, ApiWorkflow, ApiWorkflowPlugin } from "./api";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -172,6 +176,16 @@ type WorkflowPlan = {
   concurrency: number;
   tags: string[];
   steps: WorkflowStepRecord[];
+};
+
+type ArtifactRecord = {
+  key: string;
+  file: string;
+  type: string;
+  source: string;
+  summary: string;
+  path: string;
+  updatedAt: string;
 };
 
 type TaskFormValues = {
@@ -421,6 +435,13 @@ const initialApprovals: ApprovalRecord[] = [
   },
 ];
 
+const initialArtifacts: ArtifactRecord[] = [
+  { key: "asset_md", file: "AI Agent 工作流正文.md", type: "MD", source: "文案 Agent", summary: "正文草稿", path: "artifact://demo/article.md", updatedAt: "2 分钟前" },
+  { key: "asset_cover", file: "公众号封面 16-9.png", type: "PNG", source: "设计 Agent", summary: "封面 brief", path: "artifact://demo/cover.png", updatedAt: "8 分钟前" },
+  { key: "asset_zip", file: "发布包.zip", type: "ZIP", source: "发布 Agent", summary: "发布包", path: "artifact://demo/publish.zip", updatedAt: "23 分钟前" },
+  { key: "asset_diff", file: "capability-gate.diff", type: "DIFF", source: "Codex", summary: "能力闸口变更摘要", path: "artifact://demo/capability-gate.diff", updatedAt: "1 小时前" },
+];
+
 function statusTag(status: TaskStatus) {
   const meta = taskStatusMeta[status];
   return <Tag color={meta.color}>{meta.label}</Tag>;
@@ -516,6 +537,30 @@ function approvalFromApi(approval: ApiApproval): ApprovalRecord {
   };
 }
 
+function artifactFromApi(artifact: ApiArtifact): ArtifactRecord {
+  return {
+    key: artifact.id,
+    file: artifact.name,
+    type: artifact.kind.toUpperCase(),
+    source: artifact.source,
+    summary: artifact.summary,
+    path: artifact.path,
+    updatedAt: formatTime(artifact.updatedAt),
+  };
+}
+
+function workflowFromApi(workflow: ApiWorkflow): WorkflowPlan {
+  return {
+    key: workflow.id,
+    name: workflow.name,
+    description: workflow.description,
+    provider: workflow.provider,
+    concurrency: workflow.concurrency,
+    tags: workflow.tags,
+    steps: workflow.steps,
+  };
+}
+
 function normalizeAgentStatus(status: string): AgentRecord["status"] {
   if (status === "运行中" || status === "禁用") return status;
   return "启用";
@@ -550,6 +595,8 @@ export default function App() {
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>(initialKnowledgeItems);
   const [connectors, setConnectors] = useState<ConnectorRecord[]>(initialConnectors);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>(initialApprovals);
+  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>(initialArtifacts);
+  const [savedWorkflows, setSavedWorkflows] = useState<WorkflowPlan[]>([]);
   const [skills, setSkills] = useState<ApiSkill[]>([]);
   const [workflowPlugins, setWorkflowPlugins] = useState<ApiWorkflowPlugin[]>([]);
   const [runEvents, setRunEvents] = useState<Record<string, ApiRunEvent[]>>({});
@@ -570,13 +617,15 @@ export default function App() {
 
     async function loadWorkspaceData() {
       try {
-        const [taskResult, agentResult, teamResult, knowledgeResult, connectorResult, approvalResult] = await Promise.all([
+        const [taskResult, agentResult, teamResult, knowledgeResult, connectorResult, approvalResult, artifactResult, workflowResult] = await Promise.all([
           listApiTasks(),
           listApiAgents(),
           listApiAgentTeams(),
           listApiKnowledgeItems(),
           listApiConnectors(),
           listApiApprovals(),
+          listApiArtifacts(),
+          listApiWorkflows(),
         ]);
         const [skillResult, pluginResult] = await Promise.all([scanApiSkills(), scanApiPlugins()]);
 
@@ -588,6 +637,8 @@ export default function App() {
         const apiKnowledgeItems = knowledgeResult.knowledgeItems.map(knowledgeFromApi);
         const apiConnectors = connectorResult.connectors.map(connectorFromApi);
         const apiApprovals = approvalResult.approvals.map(approvalFromApi);
+        const apiArtifacts = artifactResult.artifacts.map(artifactFromApi);
+        const apiWorkflows = workflowResult.workflows.map(workflowFromApi);
 
         if (apiTasks.length > 0) {
           setTasks(apiTasks);
@@ -597,6 +648,8 @@ export default function App() {
         if (apiTeams.length > 0) setAgentTeams(apiTeams);
         if (apiKnowledgeItems.length > 0) setKnowledgeItems(apiKnowledgeItems);
         if (apiConnectors.length > 0) setConnectors(apiConnectors);
+        if (apiArtifacts.length > 0) setArtifacts(apiArtifacts);
+        setSavedWorkflows(apiWorkflows);
         setApprovals(apiApprovals);
         setSkills(skillResult.skills);
         setWorkflowPlugins(pluginResult.plugins);
@@ -893,6 +946,52 @@ export default function App() {
     }
   }
 
+  async function refreshArtifacts() {
+    try {
+      const result = await listApiArtifacts();
+      const apiArtifacts = result.artifacts.map(artifactFromApi);
+      if (apiArtifacts.length > 0) setArtifacts(apiArtifacts);
+    } catch {
+      messageApi.warning("API 未启动，无法刷新 Artifact 列表");
+    }
+  }
+
+  async function createManualArtifact() {
+    try {
+      const result = await createApiArtifact({
+        taskId: selectedTask.key,
+        runId: selectedTask.runId,
+        name: `${selectedTask.title} · handoff.md`,
+        kind: "markdown",
+        summary: "人工登记的交付摘要，用于验证 Artifact 持久化。",
+        source: selectedTask.runtime,
+        path: `.agent-workbench/artifacts/${selectedTask.key}/handoff.md`,
+        manifest: { sourceTaskId: selectedTask.key, runtime: selectedTask.runtime },
+      });
+      setArtifacts((current) => [artifactFromApi(result.artifact), ...current]);
+      messageApi.success("Artifact 已写入 SQLite");
+    } catch {
+      messageApi.error("Artifact 登记失败，请确认 API server 正在运行");
+    }
+  }
+
+  async function saveWorkflow(plan: WorkflowPlan) {
+    try {
+      const result = await createApiWorkflow({
+        name: plan.name,
+        description: plan.description,
+        provider: plan.provider,
+        concurrency: plan.concurrency,
+        tags: plan.tags,
+        steps: plan.steps,
+      });
+      setSavedWorkflows((current) => [workflowFromApi(result.workflow), ...current]);
+      messageApi.success("工作流已写入 SQLite");
+    } catch {
+      messageApi.error("工作流保存失败，请确认 API server 正在运行");
+    }
+  }
+
   async function updateTaskStatus(taskKey: string, status: TaskStatus) {
     let nextStatus = status;
     const task = tasks.find((item) => item.key === taskKey);
@@ -901,6 +1000,7 @@ export default function App() {
       if (status === "running") {
         const result = await startApiTask(taskKey);
         nextStatus = normalizeTaskStatus(result.status);
+        if (nextStatus === "done") void refreshArtifacts();
         if (result.waitingApprovalId) {
           messageApi.warning("任务仍有待审批动作，已写入 approval.waiting 事件");
         }
@@ -1214,9 +1314,9 @@ export default function App() {
       case "creative":
         return <CreativePage />;
       case "workflows":
-        return <WorkflowsPage />;
+        return <WorkflowsPage savedWorkflows={savedWorkflows} onSave={saveWorkflow} />;
       case "assets":
-        return <AssetsPage />;
+        return <AssetsPage artifacts={artifacts} onCreate={createManualArtifact} />;
       case "settings":
         return <SettingsPage />;
     }
@@ -1738,7 +1838,13 @@ function DiffPreview() {
   );
 }
 
-function WorkflowsPage() {
+function WorkflowsPage({
+  savedWorkflows,
+  onSave,
+}: {
+  savedWorkflows: WorkflowPlan[];
+  onSave: (plan: WorkflowPlan) => void | Promise<void>;
+}) {
   const templates = useMemo<WorkflowPlan[]>(
     () => [
       {
@@ -1853,7 +1959,7 @@ function WorkflowsPage() {
           </Card>
         </Col>
         <Col xs={24} xl={14}>
-          <WorkflowDagPreview plan={activePlan} />
+          <WorkflowDagPreview plan={activePlan} onSave={onSave} />
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
@@ -1893,6 +1999,23 @@ function WorkflowsPage() {
               ))}
             </div>
           </Card>
+          <Card title="已保存工作流" className="top-gap">
+            {savedWorkflows.length === 0 ? (
+              <Empty description="暂无保存的工作流" />
+            ) : (
+              <div className="list-panel">
+                {savedWorkflows.slice(0, 4).map((workflow) => (
+                  <div className="list-row" key={workflow.key}>
+                    <div>
+                      <Text strong>{workflow.name}</Text>
+                      <Text type="secondary" className="row-meta">{workflow.description}</Text>
+                    </div>
+                    <Button onClick={() => setActivePlan(workflow)}>打开</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </Col>
       </Row>
       <Card title="Resume / Feedback 返工入口">
@@ -1915,12 +2038,24 @@ function WorkflowsPage() {
   );
 }
 
-function WorkflowDagPreview({ plan }: { plan: WorkflowPlan }) {
+function WorkflowDagPreview({
+  plan,
+  onSave,
+}: {
+  plan: WorkflowPlan;
+  onSave?: (plan: WorkflowPlan) => void | Promise<void>;
+}) {
   const levels = buildWorkflowLevels(plan.steps);
   return (
     <Card
       title={plan.name}
-      extra={<Space wrap><Tag>{plan.provider}</Tag><Tag>并发 {plan.concurrency}</Tag></Space>}
+      extra={
+        <Space wrap>
+          <Tag>{plan.provider}</Tag>
+          <Tag>并发 {plan.concurrency}</Tag>
+          {onSave ? <Button size="small" onClick={() => void onSave(plan)}>保存</Button> : null}
+        </Space>
+      }
     >
       <Paragraph type="secondary">{plan.description}</Paragraph>
       <Space wrap>
@@ -1970,24 +2105,33 @@ function buildWorkflowLevels(steps: WorkflowStepRecord[]) {
   return levels;
 }
 
-function AssetsPage() {
+function AssetsPage({
+  artifacts,
+  onCreate,
+}: {
+  artifacts: ArtifactRecord[];
+  onCreate: () => void | Promise<void>;
+}) {
   return (
-    <Card title="资产库" extra={<Button>批量导出</Button>}>
+    <Card title="资产库" extra={<Space><Button onClick={() => void onCreate()}>登记产物</Button><Button>批量导出</Button></Space>}>
       <Table
-        rowKey="file"
+        rowKey="key"
         pagination={false}
         columns={[
           { title: "文件", dataIndex: "file" },
           { title: "类型", dataIndex: "type", render: (value) => <Tag color="blue">{value}</Tag> },
           { title: "来源", dataIndex: "source" },
+          { title: "摘要", dataIndex: "summary" },
           { title: "更新时间", dataIndex: "updatedAt" },
         ]}
-        dataSource={[
-          { file: "AI Agent 工作流正文.md", type: "MD", source: "文案 Agent", updatedAt: "2 分钟前" },
-          { file: "公众号封面 16-9.png", type: "PNG", source: "设计 Agent", updatedAt: "8 分钟前" },
-          { file: "发布包.zip", type: "ZIP", source: "发布 Agent", updatedAt: "23 分钟前" },
-          { file: "capability-gate.diff", type: "DIFF", source: "Codex", updatedAt: "1 小时前" },
-        ]}
+        dataSource={artifacts}
+        expandable={{
+          expandedRowRender: (record) => (
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="路径">{record.path}</Descriptions.Item>
+            </Descriptions>
+          ),
+        }}
       />
     </Card>
   );

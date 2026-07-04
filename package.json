@@ -3,11 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.15.4",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "api": "node --disable-warning=ExperimentalWarning server/index.mjs",
+    "start": "node --disable-warning=ExperimentalWarning server/index.mjs",
     "db:init": "node --disable-warning=ExperimentalWarning server/index.mjs --init",
     "build": "tsc -b && vite build",
+    "package": "pnpm build && node scripts/package.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "tsc -b --pretty false"
   },

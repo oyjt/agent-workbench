@@ -1,13 +1,14 @@
 import { createServer } from "node:http";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = process.env.AGENT_WORKBENCH_DATA_DIR ?? resolve(projectRoot, ".agent-workbench", "data");
 const dbPath = resolve(dataDir, "workbench.sqlite");
+const distDir = resolve(projectRoot, "dist");
 const port = Number(process.env.AGENT_WORKBENCH_API_PORT ?? 8787);
 const host = process.env.AGENT_WORKBENCH_API_HOST ?? "127.0.0.1";
 
@@ -127,9 +128,37 @@ db.exec(`
     PRIMARY KEY (team_id, agent_id, role)
   ) STRICT;
 
+  CREATE TABLE IF NOT EXISTS artifacts (
+    id TEXT PRIMARY KEY,
+    task_id TEXT,
+    run_id TEXT,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    source TEXT NOT NULL,
+    path TEXT NOT NULL,
+    manifest TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS workflows (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    concurrency INTEGER NOT NULL,
+    tags TEXT NOT NULL,
+    steps TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+
   CREATE INDEX IF NOT EXISTS idx_runs_task_id ON runs(task_id);
   CREATE INDEX IF NOT EXISTS idx_events_run_id_created_at ON events(run_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+  CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
 `);
 
 const insertTask = db.prepare(`
@@ -208,9 +237,23 @@ const insertTeamMember = db.prepare(`
 `);
 const listTeams = db.prepare("SELECT * FROM agent_teams ORDER BY created_at DESC");
 const listTeamMembers = db.prepare("SELECT * FROM agent_team_members WHERE team_id = ? ORDER BY member_order ASC");
+const insertArtifact = db.prepare(`
+  INSERT INTO artifacts (
+    id, task_id, run_id, name, kind, summary, source, path, manifest, created_at, updated_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const listArtifacts = db.prepare("SELECT * FROM artifacts ORDER BY created_at DESC");
+const insertWorkflow = db.prepare(`
+  INSERT INTO workflows (
+    id, name, description, provider, concurrency, tags, steps, status, created_at, updated_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const listWorkflows = db.prepare("SELECT * FROM workflows ORDER BY created_at DESC");
 
 if (process.argv.includes("--init")) {
-  console.log(JSON.stringify({ ok: true, dbPath, schema: ["tasks", "runs", "events", "agents", "knowledge_items", "connectors", "approvals", "agent_teams"] }, null, 2));
+  console.log(JSON.stringify({ ok: true, dbPath, schema: ["tasks", "runs", "events", "agents", "knowledge_items", "connectors", "approvals", "agent_teams", "artifacts", "workflows"] }, null, 2));
   db.close();
   process.exit(0);
 }
@@ -344,6 +387,30 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/artifacts") {
+      sendJson(response, 200, { artifacts: listArtifacts.all().map(artifactFromRow) });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/artifacts") {
+      const body = await readJson(request);
+      const artifact = createArtifact(body);
+      sendJson(response, 201, { artifact });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/workflows") {
+      sendJson(response, 200, { workflows: listWorkflows.all().map(workflowFromRow) });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/workflows") {
+      const body = await readJson(request);
+      const workflow = createWorkflow(body);
+      sendJson(response, 201, { workflow });
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/api/skills/scan") {
       sendJson(response, 200, { skills: scanSkills() });
       return;
@@ -376,6 +443,10 @@ const server = createServer(async (request, response) => {
       const runId = createEventMatch[1];
       ensureRun(runId);
       sendSse(request, response, runId);
+      return;
+    }
+
+    if ((request.method === "GET" || request.method === "HEAD") && serveStatic(request, response, url.pathname)) {
       return;
     }
 
@@ -631,6 +702,68 @@ function createAgentTeam(body) {
   return team;
 }
 
+function createArtifact(body) {
+  const now = new Date().toISOString();
+  const artifact = {
+    id: createId("artifact"),
+    taskId: typeof body.taskId === "string" ? body.taskId : null,
+    runId: typeof body.runId === "string" ? body.runId : null,
+    name: requiredString(body.name, "name"),
+    kind: stringOr(body.kind, "markdown"),
+    summary: stringOr(body.summary, ""),
+    source: stringOr(body.source, "manual"),
+    path: stringOr(body.path, ""),
+    manifest: body.manifest && typeof body.manifest === "object" ? body.manifest : {},
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  insertArtifact.run(
+    artifact.id,
+    artifact.taskId,
+    artifact.runId,
+    artifact.name,
+    artifact.kind,
+    artifact.summary,
+    artifact.source,
+    artifact.path,
+    JSON.stringify(artifact.manifest),
+    artifact.createdAt,
+    artifact.updatedAt,
+  );
+  return artifact;
+}
+
+function createWorkflow(body) {
+  const now = new Date().toISOString();
+  const workflow = {
+    id: createId("workflow"),
+    name: requiredString(body.name, "name"),
+    description: stringOr(body.description, ""),
+    provider: stringOr(body.provider, "codex-cli"),
+    concurrency: Number.isFinite(body.concurrency) ? body.concurrency : 1,
+    tags: Array.isArray(body.tags) ? body.tags : [],
+    steps: Array.isArray(body.steps) ? body.steps : [],
+    status: stringOr(body.status, "draft"),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  insertWorkflow.run(
+    workflow.id,
+    workflow.name,
+    workflow.description,
+    workflow.provider,
+    workflow.concurrency,
+    JSON.stringify(workflow.tags),
+    JSON.stringify(workflow.steps),
+    workflow.status,
+    workflow.createdAt,
+    workflow.updatedAt,
+  );
+  return workflow;
+}
+
 function updateTaskAndRunStatus(taskId, status) {
   const now = new Date().toISOString();
   updateTaskStatusStatement.run(status, now, taskId);
@@ -673,15 +806,38 @@ function startTask(taskId) {
   }
 
   if (task.runtime === "Codex" || task.target_id.includes("coding")) {
+    const artifact = createArtifact({
+      taskId: task.id,
+      runId: run.id,
+      name: `${task.title} · diff.md`,
+      kind: "diff",
+      summary: "Codex Adapter 生成的代码变更计划和验证摘要。",
+      source: "Codex",
+      path: `.agent-workbench/artifacts/${task.id}/diff.md`,
+      manifest: { sourceTaskId: task.id, runtime: task.runtime },
+    });
     appendEvent(run.id, "adapter.codex.diff", {
+      artifactId: artifact.id,
       file: "src/App.tsx",
-      summary: "生成代码变更计划和验证摘要。真实文件写入将在 CLI/File approval gate 后执行。",
+      summary: artifact.summary,
     });
   } else {
-    appendEvent(run.id, "artifact.created", {
+    const artifact = createArtifact({
+      taskId: task.id,
+      runId: run.id,
       type: "markdown",
-      title: `${task.title} · draft`,
+      name: `${task.title} · draft.md`,
+      kind: "markdown",
+      summary: "Runtime Adapter 生成的首版草稿。",
+      source: task.runtime,
+      path: `.agent-workbench/artifacts/${task.id}/draft.md`,
       manifest: { sourceTaskId: task.id, runtime: task.runtime },
+    });
+    appendEvent(run.id, "artifact.created", {
+      artifactId: artifact.id,
+      type: artifact.kind,
+      title: artifact.name,
+      manifest: artifact.manifest,
     });
   }
 
@@ -922,6 +1078,37 @@ function teamFromRow(row) {
   };
 }
 
+function artifactFromRow(row) {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    runId: row.run_id,
+    name: row.name,
+    kind: row.kind,
+    summary: row.summary,
+    source: row.source,
+    path: row.path,
+    manifest: JSON.parse(row.manifest),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function workflowFromRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    provider: row.provider,
+    concurrency: row.concurrency,
+    tags: JSON.parse(row.tags),
+    steps: JSON.parse(row.steps),
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function ensureConnector(connectorId) {
   const connector = getConnector.get(connectorId);
   if (!connector) throw new Error("connector_not_found");
@@ -1071,6 +1258,49 @@ function sendEmpty(response, status) {
     "Access-Control-Allow-Origin": "*",
   });
   response.end();
+}
+
+function serveStatic(request, response, pathname) {
+  if (!existsSync(distDir) || pathname.startsWith("/api/")) return false;
+
+  const decodedPath = decodeURIComponent(pathname);
+  const requestedPath = decodedPath === "/" ? "index.html" : decodedPath.replace(/^\/+/, "");
+  let filePath = resolve(distDir, requestedPath);
+  const relativePath = relative(distDir, filePath);
+  if (relativePath.startsWith("..") || relativePath.startsWith("/") || relativePath === "") {
+    return false;
+  }
+
+  try {
+    if (statSync(filePath).isDirectory()) {
+      filePath = join(filePath, "index.html");
+    }
+  } catch {
+    filePath = join(distDir, "index.html");
+  }
+
+  if (!existsSync(filePath)) return false;
+
+  const body = readFileSync(filePath);
+  response.writeHead(200, {
+    "Cache-Control": filePath.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
+    "Content-Type": contentTypeFor(filePath),
+  });
+  if (request.method === "HEAD") {
+    response.end();
+    return true;
+  }
+  response.end(body);
+  return true;
+}
+
+function contentTypeFor(filePath) {
+  if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
+  if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
+  if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
+  if (filePath.endsWith(".svg")) return "image/svg+xml";
+  if (filePath.endsWith(".json")) return "application/json; charset=utf-8";
+  return "application/octet-stream";
 }
 
 function shutdown() {

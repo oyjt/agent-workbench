@@ -117,6 +117,42 @@ export type ApiWorkflowPlugin = {
   pipeline: string[];
 };
 
+export type ApiArtifact = {
+  id: string;
+  taskId: string | null;
+  runId: string | null;
+  name: string;
+  kind: string;
+  summary: string;
+  source: string;
+  path: string;
+  manifest: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiWorkflowStep = {
+  id: string;
+  role: string;
+  task: string;
+  output?: string;
+  dependsOn: string[];
+  type?: "normal" | "approval" | "human_input";
+};
+
+export type ApiWorkflow = {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  concurrency: number;
+  tags: string[];
+  steps: ApiWorkflowStep[];
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ApiRunEvent = {
   id: string;
   runId: string;
@@ -257,6 +293,46 @@ export async function createApiAgentTeam(payload: {
   }>;
 }) {
   return requestJson<{ team: ApiAgentTeam }>("/api/agent-teams", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listApiArtifacts() {
+  return requestJson<{ artifacts: ApiArtifact[] }>("/api/artifacts");
+}
+
+export async function createApiArtifact(payload: {
+  taskId?: string;
+  runId?: string;
+  name: string;
+  kind: string;
+  summary: string;
+  source: string;
+  path: string;
+  manifest: Record<string, unknown>;
+}) {
+  return requestJson<{ artifact: ApiArtifact }>("/api/artifacts", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listApiWorkflows() {
+  return requestJson<{ workflows: ApiWorkflow[] }>("/api/workflows");
+}
+
+export async function createApiWorkflow(payload: {
+  name: string;
+  description: string;
+  provider: string;
+  concurrency: number;
+  tags: string[];
+  steps: ApiWorkflowStep[];
+}) {
+  return requestJson<{ workflow: ApiWorkflow }>("/api/workflows", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
