@@ -1,0 +1,13 @@
+{
+  "id": "coding-task",
+  "name": "代码需求实现",
+  "version": "0.1.0",
+  "description": "需求澄清、代码修改、测试、diff 审批和变更摘要。",
+  "skills": ["code-implementer"],
+  "mcpTools": ["filesystem.read", "github.pull_request"],
+  "cliCommands": ["pnpm build"],
+  "knowledgeScopes": ["架构决策", "代码文档"],
+  "capabilities": ["files:write", "cli:run", "mcp:read"],
+  "pipeline": ["plan", "patch", "test", "review", "handoff"],
+  "artifacts": ["diff", "test_log", "summary"]
+}

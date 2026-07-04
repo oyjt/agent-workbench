@@ -1,6 +1,6 @@
 # Workbench API 与 SQLite
 
-这是 P0-01 的本地后端地基：用 Node.js 内置 `node:sqlite` 创建 Workbench API，并持久化任务、运行和事件。
+本地后端用于支撑 P0 的任务、运行事件、Agent、Agent Team、知识库、MCP / CLI 连接器、审批和本地插件扫描。它使用 Node.js 内置 `node:sqlite`，不依赖外部数据库服务。
 
 ## 运行
 
@@ -26,25 +26,37 @@ http://127.0.0.1:8787
 pnpm db:init
 ```
 
-会创建三张基础表：
+会创建这些表：
 
 - `tasks`
 - `runs`
 - `events`
+- `agents`
+- `agent_teams`
+- `agent_team_members`
+- `knowledge_items`
+- `connectors`
+- `approvals`
 
-## 端点
+## 核心端点
 
-### `GET /api/health`
+### Health
 
-返回服务状态和 SQLite 文件路径。
+- `GET /api/health`
 
-### `GET /api/tasks`
+### Tasks / Runs / Events
 
-返回已创建任务。
+- `GET /api/tasks`
+- `POST /api/tasks`
+- `POST /api/tasks/:taskId/status`
+- `POST /api/tasks/:taskId/start`
+- `GET /api/runs/:runId/events`
+- `GET /api/runs/:runId/events.json`
+- `POST /api/runs/:runId/events`
 
-### `POST /api/tasks`
+`GET /api/runs/:runId/events` 返回 SSE 事件流。创建、追加或启动任务时，事件会写入 SQLite 并广播给在线订阅者。
 
-创建 task、run 和初始 event。
+创建任务示例：
 
 ```json
 {
@@ -59,31 +71,54 @@ pnpm db:init
 }
 ```
 
-### `GET /api/runs/:runId/events`
+### Agents / Agent Teams
 
-返回 SSE 事件流。
+- `GET /api/agents`
+- `POST /api/agents`
+- `POST /api/agents/:agentId/status`
+- `GET /api/agent-teams`
+- `POST /api/agent-teams`
 
-### `GET /api/runs/:runId/events.json`
+Agent Team 当前使用串行执行模型：`startTask` 会按 `agent_team_members.member_order` 写入 `agent.started`、`message.delta`、`agent.completed` 和 `team.completed` 事件。
 
-返回指定 run 的事件列表。
+### Knowledge
 
-### `POST /api/runs/:runId/events`
+- `GET /api/knowledge-items`
+- `POST /api/knowledge-items`
 
-追加运行事件。
+知识条目支持类型、标签、可见范围和状态字段，用于后续接入检索与引用治理。
 
-```json
-{
-  "type": "message.delta",
-  "payload": {
-    "role": "assistant",
-    "text": "正在读取项目上下文"
-  }
-}
-```
+### MCP / CLI Connectors
+
+- `GET /api/connectors`
+- `POST /api/connectors`
+- `POST /api/connectors/:connectorId/check`
+- `POST /api/connectors/:connectorId/invoke`
+
+低风险 CLI 会通过 `spawnSync` 在项目根目录执行命令，并把 stdout / stderr 摘要写入事件。中高风险 MCP / CLI 调用不会直接执行，而是创建 `approval` 记录并返回 `approval_required`。
+
+### Approvals
+
+- `GET /api/approvals`
+- `GET /api/approvals?status=pending`
+- `POST /api/approvals/:approvalId/respond`
+
+审批决策支持 `allow_once`、`allow_session` 和 `deny`。允许后任务状态进入 `running`，拒绝后进入 `paused`。
+
+### Skills / Workflow Plugins
+
+- `GET /api/skills/scan`
+- `GET /api/plugins/scan`
+
+扫描规则：
+
+- `skills/*/SKILL.md` 解析 `name`、`description`、`permissions`、`risk`
+- `plugins/*/plugin.json` 与 `plugins/*/SKILL.md` 组合为 Workflow Plugin 元数据
+- Plugin manifest 支持 `skills`、`mcpTools`、`cliCommands`、`knowledgeScopes`、`capabilities`、`pipeline`
 
 ## 当前边界
 
-- `node:sqlite` 在当前 Node 版本仍会输出 ExperimentalWarning。
-- 目前只完成 task / run / event 的数据地基。
-- 还未实现 Agent、知识库、连接器、审批、Artifact 的数据库表。
-- SSE 已有端点，但前端尚未订阅真实事件流。
+- Runtime Adapter 是 P0 简化实现：用于验证任务状态、事件、审批和串行团队执行闭环，还不是完整模型执行器。
+- MCP 调用当前是模拟 health-call；CLI 低风险命令可真实执行。
+- Artifact Studio 当前是前端预览，尚未落库为 artifact 表。
+- `node:sqlite` 在当前 Node 版本仍属于实验能力，脚本里已隐藏 ExperimentalWarning。

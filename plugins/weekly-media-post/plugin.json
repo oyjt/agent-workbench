@@ -1,0 +1,13 @@
+{
+  "id": "weekly-media-post",
+  "name": "自媒体周更",
+  "version": "0.1.0",
+  "description": "热榜采集、正文生成、封面 brief、审核和发布包。",
+  "skills": ["content-planner", "web-access"],
+  "mcpTools": ["browser.search", "filesystem.read"],
+  "cliCommands": [],
+  "knowledgeScopes": ["BRAND.md", "CONTENT.md", "发布 SOP"],
+  "capabilities": ["network:read", "knowledge:read", "files:write", "browser:input"],
+  "pipeline": ["discovery", "plan", "generate", "critique", "handoff"],
+  "artifacts": ["markdown", "cover_brief", "publish_zip"]
+}

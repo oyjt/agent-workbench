@@ -44,8 +44,29 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useMemo, useState } from "react";
-import { createApiTask } from "./api";
+import { useEffect, useMemo, useState } from "react";
+import {
+  appendRunEvent,
+  checkApiConnector,
+  createApiAgent,
+  createApiAgentTeam,
+  createApiConnector,
+  createApiKnowledgeItem,
+  createApiTask,
+  invokeApiConnector,
+  listApiAgents,
+  listApiAgentTeams,
+  listApiApprovals,
+  listApiConnectors,
+  listApiKnowledgeItems,
+  listApiTasks,
+  respondApiApproval,
+  scanApiPlugins,
+  scanApiSkills,
+  startApiTask,
+  updateApiTaskStatus,
+} from "./api";
+import type { ApiAgent, ApiAgentTeam, ApiApproval, ApiConnector, ApiKnowledgeItem, ApiRunEvent, ApiSkill, ApiTask, ApiWorkflowPlugin } from "./api";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -53,6 +74,7 @@ const { Title, Text, Paragraph } = Typography;
 type PageKey =
   | "overview"
   | "agents"
+  | "skills"
   | "plugins"
   | "knowledge"
   | "connectors"
@@ -67,6 +89,7 @@ type ConnectorKind = "MCP" | "CLI";
 
 type Task = {
   key: string;
+  runId?: string;
   title: string;
   description: string;
   owner: string;
@@ -86,6 +109,19 @@ type AgentRecord = {
   knowledgeScope: string;
   permissionProfile: string;
   status: "启用" | "运行中" | "禁用";
+};
+
+type AgentTeamRecord = {
+  key: string;
+  name: string;
+  workflow: string;
+  description: string;
+  status: "启用" | "运行中" | "禁用";
+  members: Array<{
+    agentId: string;
+    role: string;
+    order: number;
+  }>;
 };
 
 type KnowledgeItem = {
@@ -158,6 +194,13 @@ type AgentFormValues = {
   knowledgeScope: string;
 };
 
+type AgentTeamFormValues = {
+  name: string;
+  workflow: string;
+  description: string;
+  agentIds: string[];
+};
+
 type KnowledgeFormValues = {
   title: string;
   type: KnowledgeItem["type"];
@@ -177,6 +220,7 @@ type ConnectorFormValues = {
 const pageMeta: Record<PageKey, { title: string; subtitle: string }> = {
   overview: { title: "工作台", subtitle: "任务、审批、产物和运行状态集中管理" },
   agents: { title: "Agents", subtitle: "管理 Agent、Team、Runtime 与能力范围" },
+  skills: { title: "Skills", subtitle: "扫描本地 skill 元数据、权限声明和风险等级" },
   plugins: { title: "插件", subtitle: "Workflow Plugin、输入 Schema、Pipeline 与授权" },
   knowledge: { title: "知识库", subtitle: "团队知识、品牌契约、内容契约和引用治理" },
   connectors: { title: "连接器", subtitle: "MCP servers 与受控 CLI commands" },
@@ -281,6 +325,20 @@ const initialAgents: AgentRecord[] = [
   },
 ];
 
+const initialAgentTeams: AgentTeamRecord[] = [
+  {
+    key: "team_content_ops",
+    name: "自媒体内容团队",
+    workflow: "lead_sequential",
+    description: "选题、写作、设计审核、发布运营串行协作。",
+    status: "启用",
+    members: [
+      { agentId: "agent_topic", role: "planner", order: 0 },
+      { agentId: "agent_creative", role: "designer", order: 1 },
+    ],
+  },
+];
+
 const initialKnowledgeItems: KnowledgeItem[] = [
   {
     key: "kb_sop",
@@ -382,25 +440,200 @@ function normalizeTaskStatus(status: string): TaskStatus {
   return allowed.includes(status as TaskStatus) ? (status as TaskStatus) : "queued";
 }
 
+function taskFromApi(task: ApiTask): Task {
+  return {
+    key: task.id,
+    runId: task.runId,
+    title: task.title,
+    description: task.prompt,
+    owner: task.owner,
+    runtime: task.runtime,
+    status: normalizeTaskStatus(task.status),
+    target: task.targetId,
+    updatedAt: formatTime(task.updatedAt),
+  };
+}
+
+function agentFromApi(agent: ApiAgent): AgentRecord {
+  return {
+    key: agent.id,
+    name: agent.name,
+    description: agent.description,
+    runtime: agent.runtime,
+    model: agent.model,
+    capability: `${agent.skillIds.length} Skills`,
+    knowledgeScope: agent.knowledgeScope,
+    permissionProfile: agent.permissionProfile,
+    status: normalizeAgentStatus(agent.status),
+  };
+}
+
+function teamFromApi(team: ApiAgentTeam): AgentTeamRecord {
+  return {
+    key: team.id,
+    name: team.name,
+    workflow: team.workflow,
+    description: team.description,
+    status: normalizeAgentStatus(team.status),
+    members: team.members,
+  };
+}
+
+function knowledgeFromApi(item: ApiKnowledgeItem): KnowledgeItem {
+  return {
+    key: item.id,
+    title: item.title,
+    type: normalizeKnowledgeType(item.type),
+    meta: `${item.visibility === "team" ? "团队" : "项目"} · ${formatTime(item.updatedAt)} · 引用 0 次`,
+    status: normalizeKnowledgeStatus(item.status),
+    tags: item.tags,
+    visibility: item.visibility === "team" ? "team" : "project",
+  };
+}
+
+function connectorFromApi(connector: ApiConnector): ConnectorRecord {
+  return {
+    key: connector.id,
+    kind: connector.kind,
+    name: connector.name,
+    description: connector.description,
+    status: normalizeConnectorStatus(connector.status),
+    risk: connector.risk,
+    binding: connector.binding,
+  };
+}
+
+function approvalFromApi(approval: ApiApproval): ApprovalRecord {
+  return {
+    key: approval.id,
+    taskKey: approval.taskId,
+    title: approval.title,
+    source: approval.source,
+    risk: approval.risk,
+    capabilities: approval.capabilities,
+    status: approval.status,
+    reason: approval.reason,
+  };
+}
+
+function normalizeAgentStatus(status: string): AgentRecord["status"] {
+  if (status === "运行中" || status === "禁用") return status;
+  return "启用";
+}
+
+function normalizeKnowledgeType(type: string): KnowledgeItem["type"] {
+  const allowed: KnowledgeItem["type"][] = ["SOP", "品牌", "平台规则", "决策", "代码文档"];
+  return allowed.includes(type as KnowledgeItem["type"]) ? (type as KnowledgeItem["type"]) : "SOP";
+}
+
+function normalizeKnowledgeStatus(status: string): KnowledgeItem["status"] {
+  const allowed: KnowledgeItem["status"][] = ["已审核", "契约", "将过期", "草稿"];
+  return allowed.includes(status as KnowledgeItem["status"]) ? (status as KnowledgeItem["status"]) : "草稿";
+}
+
+function normalizeConnectorStatus(status: string): ConnectorRecord["status"] {
+  const allowed: ConnectorRecord["status"][] = ["在线", "CLI", "待检查", "禁用"];
+  return allowed.includes(status as ConnectorRecord["status"]) ? (status as ConnectorRecord["status"]) : "待检查";
+}
+
+function formatTime(value: string) {
+  return Number.isNaN(Date.parse(value)) ? value : new Date(value).toLocaleTimeString();
+}
+
 export default function App() {
   const [messageApi, contextHolder] = message.useMessage();
   const [page, setPage] = useState<PageKey>("overview");
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [selectedTask, setSelectedTask] = useState<Task>(initialTasks[0]);
   const [agents, setAgents] = useState<AgentRecord[]>(initialAgents);
+  const [agentTeams, setAgentTeams] = useState<AgentTeamRecord[]>(initialAgentTeams);
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>(initialKnowledgeItems);
   const [connectors, setConnectors] = useState<ConnectorRecord[]>(initialConnectors);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>(initialApprovals);
+  const [skills, setSkills] = useState<ApiSkill[]>([]);
+  const [workflowPlugins, setWorkflowPlugins] = useState<ApiWorkflowPlugin[]>([]);
+  const [runEvents, setRunEvents] = useState<Record<string, ApiRunEvent[]>>({});
   const [taskFilter, setTaskFilter] = useState<string>("全部");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [pluginOpen, setPluginOpen] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
+  const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
   const [knowledgeDrawerOpen, setKnowledgeDrawerOpen] = useState(false);
   const [connectorDrawer, setConnectorDrawer] = useState<{ open: boolean; kind: ConnectorKind }>({
     open: false,
     kind: "MCP",
   });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadWorkspaceData() {
+      try {
+        const [taskResult, agentResult, teamResult, knowledgeResult, connectorResult, approvalResult] = await Promise.all([
+          listApiTasks(),
+          listApiAgents(),
+          listApiAgentTeams(),
+          listApiKnowledgeItems(),
+          listApiConnectors(),
+          listApiApprovals(),
+        ]);
+        const [skillResult, pluginResult] = await Promise.all([scanApiSkills(), scanApiPlugins()]);
+
+        if (cancelled) return;
+
+        const apiTasks = taskResult.tasks.map(taskFromApi);
+        const apiAgents = agentResult.agents.map(agentFromApi);
+        const apiTeams = teamResult.teams.map(teamFromApi);
+        const apiKnowledgeItems = knowledgeResult.knowledgeItems.map(knowledgeFromApi);
+        const apiConnectors = connectorResult.connectors.map(connectorFromApi);
+        const apiApprovals = approvalResult.approvals.map(approvalFromApi);
+
+        if (apiTasks.length > 0) {
+          setTasks(apiTasks);
+          setSelectedTask(apiTasks[0]);
+        }
+        if (apiAgents.length > 0) setAgents(apiAgents);
+        if (apiTeams.length > 0) setAgentTeams(apiTeams);
+        if (apiKnowledgeItems.length > 0) setKnowledgeItems(apiKnowledgeItems);
+        if (apiConnectors.length > 0) setConnectors(apiConnectors);
+        setApprovals(apiApprovals);
+        setSkills(skillResult.skills);
+        setWorkflowPlugins(pluginResult.plugins);
+      } catch {
+        if (!cancelled) {
+          messageApi.warning("API 未启动，当前使用前端演示数据");
+        }
+      }
+    }
+
+    void loadWorkspaceData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messageApi]);
+
+  useEffect(() => {
+    if (!selectedTask.runId) return;
+
+    const eventSource = new EventSource(`/api/runs/${selectedTask.runId}/events`);
+
+    eventSource.addEventListener("runtime", (event) => {
+      const parsed = JSON.parse(event.data) as ApiRunEvent;
+      setRunEvents((current) => {
+        const existing = current[parsed.runId] ?? [];
+        if (existing.some((item) => item.id === parsed.id)) return current;
+        return { ...current, [parsed.runId]: [...existing, parsed] };
+      });
+    });
+
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+
+    return () => eventSource.close();
+  }, [selectedTask.runId]);
 
   const filteredTasks = useMemo(() => {
     if (taskFilter === "全部") return tasks;
@@ -437,6 +670,7 @@ export default function App() {
   const menuItems = [
     { key: "overview", icon: <AppstoreOutlined />, label: "工作台" },
     { key: "agents", icon: <TeamOutlined />, label: "Agents" },
+    { key: "skills", icon: <CodeOutlined />, label: "Skills" },
     { key: "plugins", icon: <BranchesOutlined />, label: "插件" },
     { key: "knowledge", icon: <DatabaseOutlined />, label: "知识库" },
     { key: "connectors", icon: <CloudServerOutlined />, label: "连接器" },
@@ -448,10 +682,12 @@ export default function App() {
 
   async function createTask(values: TaskFormValues) {
     const agent = agents.find((item) => item.key === values.targetId);
-    const target = values.targetType === "plugin" ? values.targetId : agent?.name ?? "自媒体内容团队";
+    const team = agentTeams.find((item) => item.key === values.targetId);
+    const target = values.targetType === "plugin" ? values.targetId : agent?.name ?? team?.name ?? "自媒体内容团队";
     const runtime = values.targetType === "plugin" ? "BrowserOps" : agent?.runtime ?? "BrowserOps";
     const owner = values.targetType === "agent" ? target : "内容团队";
     let taskKey = `task_${Date.now()}`;
+    let runId: string | undefined;
     let status: TaskStatus = values.requiresApproval ? "approval" : "queued";
     let persisted = false;
 
@@ -467,7 +703,9 @@ export default function App() {
         requiresApproval: values.requiresApproval,
       });
       taskKey = result.task.id;
+      runId = result.runId;
       status = normalizeTaskStatus(result.task.status);
+      setRunEvents((current) => ({ ...current, [result.runId]: result.events }));
       persisted = true;
     } catch {
       persisted = false;
@@ -475,6 +713,7 @@ export default function App() {
 
     const newTask: Task = {
       key: taskKey,
+      runId,
       title: values.title,
       description: values.prompt,
       owner,
@@ -512,77 +751,215 @@ export default function App() {
     }
   }
 
-  function createAgent(values: AgentFormValues) {
-    const agent: AgentRecord = {
-      key: `agent_${Date.now()}`,
-      name: values.name,
-      description: values.description,
-      runtime: values.runtime,
-      model: values.model,
-      capability: `${values.skillIds.length} Skills · 0 MCP`,
-      knowledgeScope: values.knowledgeScope,
-      permissionProfile: values.permissionProfile,
-      status: "启用",
-    };
+  async function createAgent(values: AgentFormValues) {
+    let agent: AgentRecord;
+
+    try {
+      const result = await createApiAgent(values);
+      agent = agentFromApi(result.agent);
+      messageApi.success("Agent 已写入 SQLite");
+    } catch {
+      agent = {
+        key: `agent_${Date.now()}`,
+        name: values.name,
+        description: values.description,
+        runtime: values.runtime,
+        model: values.model,
+        capability: `${values.skillIds.length} Skills · 0 MCP`,
+        knowledgeScope: values.knowledgeScope,
+        permissionProfile: values.permissionProfile,
+        status: "启用",
+      };
+      messageApi.warning("API 未启动，已创建前端临时 Agent");
+    }
 
     setAgents((current) => [agent, ...current]);
     setAgentDrawerOpen(false);
     setPage("agents");
-    messageApi.success("Agent 已创建，可继续绑定 MCP / CLI 能力");
   }
 
-  function createKnowledgeItem(values: KnowledgeFormValues) {
-    const item: KnowledgeItem = {
-      key: `knowledge_${Date.now()}`,
-      title: values.title,
-      type: values.type,
-      meta: `${values.visibility === "team" ? "团队" : "项目"} · 草稿 · 引用 0 次`,
-      status: "草稿",
-      tags: values.tags,
-      visibility: values.visibility,
-    };
+  async function createAgentTeam(values: AgentTeamFormValues) {
+    let team: AgentTeamRecord;
+    const members = values.agentIds.map((agentId, index) => ({
+      agentId,
+      role: `step_${index + 1}`,
+      order: index,
+    }));
+
+    try {
+      const result = await createApiAgentTeam({
+        name: values.name,
+        workflow: values.workflow,
+        description: values.description,
+        members,
+      });
+      team = teamFromApi(result.team);
+      messageApi.success("Agent Team 已写入 SQLite");
+    } catch {
+      team = {
+        key: `team_${Date.now()}`,
+        name: values.name,
+        workflow: values.workflow,
+        description: values.description,
+        status: "启用",
+        members,
+      };
+      messageApi.warning("API 未启动，已创建前端临时 Agent Team");
+    }
+
+    setAgentTeams((current) => [team, ...current]);
+    setTeamDrawerOpen(false);
+    setPage("agents");
+  }
+
+  async function createKnowledgeItem(values: KnowledgeFormValues) {
+    let item: KnowledgeItem;
+
+    try {
+      const result = await createApiKnowledgeItem(values);
+      item = knowledgeFromApi(result.knowledgeItem);
+      messageApi.success("知识条目已写入 SQLite");
+    } catch {
+      item = {
+        key: `knowledge_${Date.now()}`,
+        title: values.title,
+        type: values.type,
+        meta: `${values.visibility === "team" ? "团队" : "项目"} · 草稿 · 引用 0 次`,
+        status: "草稿",
+        tags: values.tags,
+        visibility: values.visibility,
+      };
+      messageApi.warning("API 未启动，已创建前端临时知识条目");
+    }
 
     setKnowledgeItems((current) => [item, ...current]);
     setKnowledgeDrawerOpen(false);
     setPage("knowledge");
-    messageApi.success("知识条目已保存为草稿，审核后可进入 Agent 检索范围");
   }
 
-  function createConnector(kind: ConnectorKind, values: ConnectorFormValues) {
-    const connector: ConnectorRecord = {
-      key: `${kind.toLowerCase()}_${Date.now()}`,
-      kind,
-      name: values.name,
-      description: kind === "MCP" ? `${values.command} · 待自检` : `${values.command} · command template`,
-      status: "待检查",
-      risk: values.risk,
-      binding: values.binding,
-    };
+  async function createConnector(kind: ConnectorKind, values: ConnectorFormValues) {
+    let connector: ConnectorRecord;
+
+    try {
+      const result = await createApiConnector({ ...values, kind });
+      connector = connectorFromApi(result.connector);
+      messageApi.success(`${kind} 连接器已写入 SQLite`);
+    } catch {
+      connector = {
+        key: `${kind.toLowerCase()}_${Date.now()}`,
+        kind,
+        name: values.name,
+        description: kind === "MCP" ? `${values.command} · 待自检` : `${values.command} · command template`,
+        status: "待检查",
+        risk: values.risk,
+        binding: values.binding,
+      };
+      messageApi.warning("API 未启动，已创建前端临时连接器");
+    }
 
     setConnectors((current) => [connector, ...current]);
     setConnectorDrawer({ open: false, kind });
     setPage("connectors");
-    messageApi.success(`${kind} 连接器已注册，下一步可运行健康检查`);
   }
 
-  function updateTaskStatus(taskKey: string, status: TaskStatus) {
+  async function checkConnector(connectorKey: string) {
+    try {
+      const result = await checkApiConnector(connectorKey);
+      setConnectors((current) =>
+        current.map((connector) =>
+          connector.key === connectorKey
+            ? { ...connector, status: normalizeConnectorStatus(result.status) }
+            : connector,
+        ),
+      );
+      messageApi.success(`连接器状态：${result.status}`);
+    } catch {
+      messageApi.error("连接器自检失败，请确认 API server 正在运行");
+    }
+  }
+
+  async function invokeConnector(connectorKey: string) {
+    try {
+      const result = await invokeApiConnector(connectorKey, selectedTask.key);
+      if (result.approval) {
+        setApprovals((current) => [approvalFromApi(result.approval!), ...current]);
+        setApprovalOpen(true);
+        messageApi.warning("连接器调用需要审批，已加入队列");
+        return;
+      }
+      messageApi.success(result.ok ? "连接器调用完成" : "连接器调用结束，请查看运行事件");
+    } catch {
+      messageApi.error("连接器调用失败，请确认 API server 正在运行");
+    }
+  }
+
+  async function updateTaskStatus(taskKey: string, status: TaskStatus) {
+    let nextStatus = status;
+    const task = tasks.find((item) => item.key === taskKey);
+
+    try {
+      if (status === "running") {
+        const result = await startApiTask(taskKey);
+        nextStatus = normalizeTaskStatus(result.status);
+        if (result.waitingApprovalId) {
+          messageApi.warning("任务仍有待审批动作，已写入 approval.waiting 事件");
+        }
+      } else if (task?.runId) {
+        await updateApiTaskStatus(taskKey, status);
+      }
+    } catch {
+      messageApi.warning("API 未启动，任务状态仅在前端更新");
+    }
+
     setTasks((current) =>
-      current.map((task) => (task.key === taskKey ? { ...task, status, updatedAt: nowLabel() } : task)),
+      current.map((task) => (task.key === taskKey ? { ...task, status: nextStatus, updatedAt: nowLabel() } : task)),
     );
-    setSelectedTask((current) => (current.key === taskKey ? { ...current, status, updatedAt: nowLabel() } : current));
-    messageApi.info(`任务状态已更新为：${taskStatusMeta[status].label}`);
+    setSelectedTask((current) => (current.key === taskKey ? { ...current, status: nextStatus, updatedAt: nowLabel() } : current));
+    messageApi.info(`任务状态已更新为：${taskStatusMeta[nextStatus].label}`);
   }
 
-  function respondApproval(approvalKey: string, decision: ApprovalRecord["status"]) {
+  async function appendDiagnosticEvent(task: Task) {
+    if (!task.runId) {
+      messageApi.warning("这个任务还没有持久化 run，无法追加真实事件");
+      return;
+    }
+
+    try {
+      const result = await appendRunEvent(task.runId, "message.delta", {
+        role: "assistant",
+        text: `实时事件验证：${new Date().toLocaleTimeString()}`,
+      });
+      setRunEvents((current) => {
+        const existing = current[result.event.runId] ?? [];
+        if (existing.some((item) => item.id === result.event.id)) return current;
+        return { ...current, [result.event.runId]: [...existing, result.event] };
+      });
+      messageApi.success("事件已写入 SQLite，SSE 已广播");
+    } catch {
+      messageApi.error("追加事件失败，请确认 API server 正在运行");
+    }
+  }
+
+  async function respondApproval(approvalKey: string, decision: ApprovalRecord["status"]) {
     const approval = approvals.find((item) => item.key === approvalKey);
+    const apiDecision = decision === "allowed" ? "allow_once" : "deny";
+
+    if (approval?.key) {
+      try {
+        await respondApiApproval(approval.key, apiDecision);
+      } catch {
+        messageApi.warning("API 未启动，审批仅更新前端状态");
+      }
+    }
+
     setApprovals((current) => current.map((item) => (item.key === approvalKey ? { ...item, status: decision } : item)));
 
     if (approval?.taskKey && decision === "allowed") {
-      updateTaskStatus(approval.taskKey, "running");
+      await updateTaskStatus(approval.taskKey, "running");
     }
 
     if (decision === "denied" && approval?.taskKey) {
-      updateTaskStatus(approval.taskKey, "paused");
+      await updateTaskStatus(approval.taskKey, "paused");
     }
 
     messageApi.success(decision === "allowed" ? "已允许本次能力调用" : "已拒绝本次能力调用");
@@ -681,6 +1058,7 @@ export default function App() {
         <TaskModal
           open={taskModalOpen}
           agents={agents}
+          teams={agentTeams}
           onCancel={() => setTaskModalOpen(false)}
           onCreate={createTask}
         />
@@ -688,6 +1066,12 @@ export default function App() {
           open={agentDrawerOpen}
           onClose={() => setAgentDrawerOpen(false)}
           onCreate={createAgent}
+        />
+        <AgentTeamDrawer
+          open={teamDrawerOpen}
+          agents={agents}
+          onClose={() => setTeamDrawerOpen(false)}
+          onCreate={createAgentTeam}
         />
         <KnowledgeDrawer
           open={knowledgeDrawerOpen}
@@ -769,7 +1153,11 @@ export default function App() {
 
             <Row gutter={[16, 16]}>
               <Col xs={24} xl={15}>
-                <TaskRunPanel task={selectedTask} />
+                <TaskRunPanel
+                  task={selectedTask}
+                  events={selectedTask.runId ? runEvents[selectedTask.runId] ?? [] : []}
+                  onAppendEvent={appendDiagnosticEvent}
+                />
               </Col>
               <Col xs={24} xl={9}>
                 <Card title="审批概览" extra={<Button onClick={() => setApprovalOpen(true)}>处理</Button>}>
@@ -799,9 +1187,18 @@ export default function App() {
           </Space>
         );
       case "agents":
-        return <AgentsPage agents={agents} onCreate={() => setAgentDrawerOpen(true)} />;
+        return (
+          <AgentsPage
+            agents={agents}
+            teams={agentTeams}
+            onCreateAgent={() => setAgentDrawerOpen(true)}
+            onCreateTeam={() => setTeamDrawerOpen(true)}
+          />
+        );
+      case "skills":
+        return <SkillsPage skills={skills} />;
       case "plugins":
-        return <PluginsPage onStart={() => setPluginOpen(true)} />;
+        return <PluginsPage plugins={workflowPlugins} onStart={() => setPluginOpen(true)} />;
       case "knowledge":
         return <KnowledgePage knowledgeItems={knowledgeItems} onCreate={() => setKnowledgeDrawerOpen(true)} />;
       case "connectors":
@@ -810,6 +1207,8 @@ export default function App() {
             connectors={connectors}
             onCreateMcp={() => setConnectorDrawer({ open: true, kind: "MCP" })}
             onCreateCli={() => setConnectorDrawer({ open: true, kind: "CLI" })}
+            onCheck={checkConnector}
+            onInvoke={invokeConnector}
           />
         );
       case "creative":
@@ -831,46 +1230,68 @@ function stepIndexForTask(status: TaskStatus) {
   return 3;
 }
 
-function TaskActionBar({ task, onStatusChange }: { task: Task; onStatusChange: (taskKey: string, status: TaskStatus) => void }) {
+function TaskActionBar({ task, onStatusChange }: { task: Task; onStatusChange: (taskKey: string, status: TaskStatus) => void | Promise<void> }) {
   const canPause = task.status === "running" || task.status === "queued";
   const canResume = task.status === "paused" || task.status === "approval";
   const canRetry = task.status === "failed" || task.status === "cancelled";
 
   return (
     <Flex wrap gap={8} className="task-actions">
-      <Button disabled={!canPause} onClick={() => onStatusChange(task.key, "paused")}>暂停</Button>
-      <Button disabled={!canResume} onClick={() => onStatusChange(task.key, "running")}>继续</Button>
-      <Button disabled={!canRetry} onClick={() => onStatusChange(task.key, "queued")}>重试</Button>
-      <Button danger disabled={task.status === "done" || task.status === "cancelled"} onClick={() => onStatusChange(task.key, "cancelled")}>停止</Button>
+      <Button disabled={!canPause} onClick={() => void onStatusChange(task.key, "paused")}>暂停</Button>
+      <Button disabled={!canResume} onClick={() => void onStatusChange(task.key, "running")}>继续</Button>
+      <Button disabled={!canRetry} onClick={() => void onStatusChange(task.key, "queued")}>重试</Button>
+      <Button danger disabled={task.status === "done" || task.status === "cancelled"} onClick={() => void onStatusChange(task.key, "cancelled")}>停止</Button>
     </Flex>
   );
 }
 
-function TaskRunPanel({ task }: { task: Task }) {
-  const items = [
-    {
-      color: "blue",
-      content: `run.created · ${task.title}`,
-    },
-    {
-      color: task.status === "failed" ? "red" : "green",
-      content: `context.bound · ${task.owner} / ${task.runtime}`,
-    },
-    {
-      color: task.status === "approval" ? "gold" : "blue",
-      content: task.status === "approval" ? "approval.requested · 等待能力授权" : "tool_call.completed · 知识与连接器上下文已准备",
-    },
-    {
-      color: task.status === "done" ? "green" : "gray",
-      content: task.status === "done" ? "artifact.created · 产物已写入 Studio" : "artifact.pending · 等待运行输出",
-    },
-  ];
+function TaskRunPanel({
+  task,
+  events,
+  onAppendEvent,
+}: {
+  task: Task;
+  events: ApiRunEvent[];
+  onAppendEvent: (task: Task) => void;
+}) {
+  const items =
+    events.length > 0
+      ? events.map((event) => ({
+          color: event.type.includes("error") ? "red" : event.type.includes("approval") ? "gold" : "blue",
+          content: (
+            <Space orientation="vertical" size={0}>
+              <Text strong>{event.type}</Text>
+              <Text type="secondary">{formatEventPayload(event.payload)}</Text>
+              <Text type="secondary">{new Date(event.createdAt).toLocaleTimeString()}</Text>
+            </Space>
+          ),
+        }))
+      : [
+          {
+            color: "gray",
+            content: task.runId ? "正在等待 SSE 事件..." : "本地临时任务尚未创建持久化 run",
+          },
+        ];
 
   return (
-    <Card title="运行事件" extra={<Tag>{task.runtime}</Tag>}>
+    <Card
+      title="运行事件"
+      extra={
+        <Space>
+          {task.runId ? <Tag color="processing">SSE</Tag> : <Tag>Local</Tag>}
+          <Button size="small" disabled={!task.runId} onClick={() => onAppendEvent(task)}>追加测试事件</Button>
+        </Space>
+      }
+    >
       <Timeline items={items} />
     </Card>
   );
+}
+
+function formatEventPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return String(payload ?? "");
+  if ("text" in payload && typeof payload.text === "string") return payload.text;
+  return JSON.stringify(payload);
 }
 
 function ArtifactSnapshot({ onOpenStudio }: { onOpenStudio: () => void }) {
@@ -897,11 +1318,23 @@ function ArtifactSnapshot({ onOpenStudio }: { onOpenStudio: () => void }) {
   );
 }
 
-function AgentsPage({ agents, onCreate }: { agents: AgentRecord[]; onCreate: () => void }) {
+function AgentsPage({
+  agents,
+  teams,
+  onCreateAgent,
+  onCreateTeam,
+}: {
+  agents: AgentRecord[];
+  teams: AgentTeamRecord[];
+  onCreateAgent: () => void;
+  onCreateTeam: () => void;
+}) {
+  const agentNameById = new Map(agents.map((agent) => [agent.key, agent.name]));
+
   return (
     <Row gutter={[16, 16]}>
       <Col xs={24} xl={15}>
-        <Card title="Agent 列表" extra={<Button type="primary" onClick={onCreate}>创建 Agent</Button>}>
+        <Card title="Agent 列表" extra={<Button type="primary" onClick={onCreateAgent}>创建 Agent</Button>}>
           <Table
             rowKey="key"
             pagination={false}
@@ -930,56 +1363,160 @@ function AgentsPage({ agents, onCreate }: { agents: AgentRecord[]; onCreate: () 
         </Card>
       </Col>
       <Col xs={24} xl={9}>
-        <Card title="团队编排">
-          <Steps
-            size="small"
-            current={3}
-            items={[
-              { title: "选题" },
-              { title: "写作" },
-              { title: "设计" },
-              { title: "审核" },
-              { title: "发布包" },
-            ]}
-          />
-          <Form layout="vertical" className="top-gap">
-            <Form.Item label="审核员系统提示词">
-              <Input.TextArea
-                rows={6}
-                value="检查事实、平台格式、敏感风险、品牌语气和发布完整性。涉及真实账号写入或提交时必须请求人工审批。"
-                readOnly
-              />
-            </Form.Item>
-          </Form>
+        <Card title="Agent Team" extra={<Button onClick={onCreateTeam}>创建 Team</Button>}>
+          {teams.length === 0 ? (
+            <Empty description="暂无 Agent Team" />
+          ) : (
+            <div className="list-panel">
+              {teams.map((team) => (
+                <div className="list-row" key={team.key}>
+                  <div>
+                    <Text strong>{team.name}</Text>
+                    <Text type="secondary" className="row-meta">{team.description || team.workflow}</Text>
+                    <Space wrap className="row-meta">
+                      <Tag>{team.workflow}</Tag>
+                      {team.members.map((member) => (
+                        <Tag key={`${team.key}_${member.agentId}_${member.role}`}>
+                          {member.role}: {agentNameById.get(member.agentId) ?? member.agentId}
+                        </Tag>
+                      ))}
+                    </Space>
+                  </div>
+                  <Tag color={team.status === "运行中" ? "processing" : "success"}>{team.status}</Tag>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </Col>
     </Row>
   );
 }
 
-function PluginsPage({ onStart }: { onStart: () => void }) {
-  const plugins = [
-    ["自媒体周更", "热榜采集、正文生成、封面 brief、审核、发布包", "内置", "success"],
-    ["代码需求实现", "需求澄清、代码修改、测试、diff 审批、变更摘要", "P0", "processing"],
-    ["产品上线宣传包", "Landing page、PPT、社媒图、短视频脚本和导出包", "需授权", "warning"],
+function SkillsPage({ skills }: { skills: ApiSkill[] }) {
+  const skillColumns: ColumnsType<ApiSkill> = [
+    {
+      title: "Skill",
+      dataIndex: "name",
+      render: (_, record) => (
+        <Space orientation="vertical" size={0}>
+          <Text strong>{record.name}</Text>
+          <Text type="secondary">{record.description || "未填写描述"}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: "权限",
+      dataIndex: "permissions",
+      render: (permissions: string[]) => (
+        <Space wrap>{permissions.length > 0 ? permissions.map((item) => <Tag key={item}>{item}</Tag>) : <Tag>none</Tag>}</Space>
+      ),
+    },
+    { title: "风险", dataIndex: "risk", width: 112, render: (risk: RiskLevel) => riskTag(risk) },
+    { title: "路径", dataIndex: "path", ellipsis: true },
   ];
+
+  return (
+    <Row gutter={[16, 16]}>
+      <Col xs={24} xl={16}>
+        <Card title="本地 Skills" extra={<Tag color="processing">scan /skills</Tag>}>
+          {skills.length === 0 ? (
+            <Empty description="暂无扫描到的本地 Skill" />
+          ) : (
+            <Table<ApiSkill>
+              rowKey="id"
+              pagination={false}
+              columns={skillColumns}
+              dataSource={skills}
+            />
+          )}
+        </Card>
+      </Col>
+      <Col xs={24} xl={8}>
+        <Card title="接入规则">
+          <Steps
+            direction="vertical"
+            size="small"
+            current={2}
+            items={[
+              { title: "读取 SKILL.md" },
+              { title: "解析权限与风险" },
+              { title: "绑定 Agent / Plugin" },
+              { title: "进入审批与审计" },
+            ]}
+          />
+        </Card>
+      </Col>
+    </Row>
+  );
+}
+
+function PluginsPage({ plugins, onStart }: { plugins: ApiWorkflowPlugin[]; onStart: () => void }) {
+  const fallbackPlugins: ApiWorkflowPlugin[] = [
+    {
+      id: "weekly-media-post",
+      name: "自媒体周更",
+      description: "热榜采集、正文生成、封面 brief、审核、发布包",
+      version: "demo",
+      path: "plugins/weekly-media-post",
+      skills: ["content-planner", "web-access"],
+      mcpTools: ["browser.search", "filesystem.read"],
+      cliCommands: [],
+      knowledgeScopes: ["BRAND.md", "CONTENT.md"],
+      capabilities: ["network:read", "knowledge:read", "files:write", "browser:input"],
+      pipeline: ["discovery", "plan", "generate", "critique", "handoff"],
+    },
+    {
+      id: "coding-task",
+      name: "代码需求实现",
+      description: "需求澄清、代码修改、测试、diff 审批、变更摘要",
+      version: "demo",
+      path: "plugins/coding-task",
+      skills: ["code-implementer"],
+      mcpTools: ["filesystem.read", "github.pull_request"],
+      cliCommands: ["pnpm build"],
+      knowledgeScopes: ["架构决策", "代码文档"],
+      capabilities: ["files:write", "cli:run", "mcp:read"],
+      pipeline: ["plan", "patch", "test", "review", "handoff"],
+    },
+    {
+      id: "launch-kit",
+      name: "产品上线宣传包",
+      description: "Landing page、PPT、社媒图、短视频脚本和导出包",
+      version: "demo",
+      path: "plugins/launch-kit",
+      skills: ["content-planner"],
+      mcpTools: [],
+      cliCommands: [],
+      knowledgeScopes: ["BRAND.md"],
+      capabilities: ["knowledge:read", "files:write"],
+      pipeline: ["brief", "copy", "visual", "export"],
+    },
+  ];
+  const rows = plugins.length > 0 ? plugins : fallbackPlugins;
+
   return (
     <Card title="Workflow Plugins" extra={<Button type="primary">安装插件</Button>}>
       <Row gutter={[16, 16]}>
-        {plugins.map(([name, desc, label, color]) => (
-          <Col xs={24} lg={8} key={name}>
+        {rows.map((plugin) => (
+          <Col xs={24} lg={8} key={plugin.id}>
             <Card
               className="plugin-card"
-              title={name}
-              extra={<Tag color={color}>{label}</Tag>}
-              actions={[<Button key="start" type={name === "自媒体周更" ? "primary" : "default"} onClick={onStart}>启动</Button>]}
+              title={plugin.name}
+              extra={<Tag color={plugin.version === "demo" ? "default" : "success"}>{plugin.version}</Tag>}
+              actions={[<Button key="start" type={plugin.id === "weekly-media-post" ? "primary" : "default"} onClick={onStart}>启动</Button>]}
             >
-              <Paragraph>{desc}</Paragraph>
+              <Paragraph>{plugin.description}</Paragraph>
               <Space wrap>
-                <Tag>Discovery</Tag>
-                <Tag>Generate</Tag>
-                <Tag>Critique</Tag>
-                <Tag>Handoff</Tag>
+                {plugin.pipeline.map((step) => <Tag key={step}>{step}</Tag>)}
+              </Space>
+              <Descriptions column={1} size="small" className="top-gap">
+                <Descriptions.Item label="Skills">{plugin.skills.join(", ") || "none"}</Descriptions.Item>
+                <Descriptions.Item label="MCP">{plugin.mcpTools.join(", ") || "none"}</Descriptions.Item>
+                <Descriptions.Item label="CLI">{plugin.cliCommands.join(", ") || "none"}</Descriptions.Item>
+              </Descriptions>
+              <Space wrap className="row-meta">
+                {plugin.capabilities.map((item) => <Tag key={item}>{item}</Tag>)}
               </Space>
             </Card>
           </Col>
@@ -1055,10 +1592,14 @@ function ConnectorsPage({
   connectors,
   onCreateMcp,
   onCreateCli,
+  onCheck,
+  onInvoke,
 }: {
   connectors: ConnectorRecord[];
   onCreateMcp: () => void;
   onCreateCli: () => void;
+  onCheck: (connectorKey: string) => void | Promise<void>;
+  onInvoke: (connectorKey: string) => void | Promise<void>;
 }) {
   return (
     <Space orientation="vertical" size={16} className="full-width">
@@ -1066,7 +1607,14 @@ function ConnectorsPage({
         <Row gutter={[16, 16]}>
           {connectors.map((connector) => (
             <Col xs={24} md={12} xl={6} key={connector.key}>
-              <Card title={connector.name} extra={<Tag color={connector.kind === "MCP" ? "blue" : "purple"}>{connector.kind}</Tag>}>
+              <Card
+                title={connector.name}
+                extra={<Tag color={connector.kind === "MCP" ? "blue" : "purple"}>{connector.kind}</Tag>}
+                actions={[
+                  <Button key="check" type="text" onClick={() => void onCheck(connector.key)}>自检</Button>,
+                  <Button key="invoke" type="text" onClick={() => void onInvoke(connector.key)}>试运行</Button>,
+                ]}
+              >
                 <Paragraph>{connector.description}</Paragraph>
                 <Space wrap>
                   <Tag>{connector.status}</Tag>
@@ -1493,7 +2041,7 @@ function ApprovalDrawer({
   open: boolean;
   approvals: ApprovalRecord[];
   onClose: () => void;
-  onRespond: (approvalKey: string, decision: ApprovalRecord["status"]) => void;
+  onRespond: (approvalKey: string, decision: ApprovalRecord["status"]) => void | Promise<void>;
 }) {
   const pendingApprovals = approvals.filter((item) => item.status === "pending");
 
@@ -1518,9 +2066,9 @@ function ApprovalDrawer({
                 <Descriptions.Item label="审计">将记录来源、参数、审批人和执行结果</Descriptions.Item>
               </Descriptions>
               <Flex justify="end" gap={8} className="drawer-actions">
-                <Button onClick={() => onRespond(approval.key, "denied")}>拒绝</Button>
+                <Button onClick={() => void onRespond(approval.key, "denied")}>拒绝</Button>
                 <Button>编辑参数</Button>
-                <Button type="primary" onClick={() => onRespond(approval.key, "allowed")}>允许本次</Button>
+                <Button type="primary" onClick={() => void onRespond(approval.key, "allowed")}>允许本次</Button>
               </Flex>
             </Card>
           ))}
@@ -1556,11 +2104,13 @@ function CapabilityRow({ capability, text, enabled = false }: { capability: stri
 function TaskModal({
   open,
   agents,
+  teams,
   onCancel,
   onCreate,
 }: {
   open: boolean;
   agents: AgentRecord[];
+  teams: AgentTeamRecord[];
   onCancel: () => void;
   onCreate: (values: TaskFormValues) => void | Promise<void>;
 }) {
@@ -1575,7 +2125,9 @@ function TaskModal({
             { value: "代码需求实现插件", label: "代码需求实现插件" },
             { value: "产品上线宣传包", label: "产品上线宣传包" },
           ]
-        : [{ value: "team_content_ops", label: "自媒体内容团队" }];
+        : teams.length > 0
+          ? teams.map((team) => ({ value: team.key, label: team.name }))
+          : [{ value: "team_content_ops", label: "自媒体内容团队" }];
 
   return (
     <Modal
@@ -1593,13 +2145,13 @@ function TaskModal({
         initialValues={{
           title: "公众号周更：AI Agent 工作流",
           targetType: "agent_team",
-          targetId: "team_content_ops",
+          targetId: teams[0]?.key ?? "team_content_ops",
           priority: "normal",
           requiresApproval: true,
         }}
         onValuesChange={(changed) => {
           if (changed.targetType) {
-            const nextTarget = changed.targetType === "agent" ? agents[0]?.key : changed.targetType === "plugin" ? "自媒体周更插件" : "team_content_ops";
+            const nextTarget = changed.targetType === "agent" ? agents[0]?.key : changed.targetType === "plugin" ? "自媒体周更插件" : teams[0]?.key ?? "team_content_ops";
             form.setFieldValue("targetId", nextTarget);
           }
         }}
@@ -1659,7 +2211,7 @@ function AgentDrawer({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (values: AgentFormValues) => void;
+  onCreate: (values: AgentFormValues) => void | Promise<void>;
 }) {
   const [form] = Form.useForm<AgentFormValues>();
   return (
@@ -1682,7 +2234,7 @@ function AgentDrawer({
           knowledgeScope: "项目知识库 / BRAND.md / CONTENT.md",
         }}
         onFinish={(values) => {
-          onCreate(values);
+          void onCreate(values);
           form.resetFields();
         }}
       >
@@ -1728,6 +2280,66 @@ function AgentDrawer({
   );
 }
 
+function AgentTeamDrawer({
+  open,
+  agents,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  agents: AgentRecord[];
+  onClose: () => void;
+  onCreate: (values: AgentTeamFormValues) => void | Promise<void>;
+}) {
+  const [form] = Form.useForm<AgentTeamFormValues>();
+  return (
+    <Drawer
+      title="创建 Agent Team"
+      open={open}
+      onClose={onClose}
+      size={520}
+      extra={<Button type="primary" onClick={() => form.submit()}>保存 Team</Button>}
+      destroyOnHidden
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{
+          workflow: "lead_sequential",
+          agentIds: agents.slice(0, 2).map((agent) => agent.key),
+        }}
+        onFinish={(values) => {
+          void onCreate(values);
+          form.resetFields();
+        }}
+      >
+        <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入 Team 名称" }]}>
+          <Input placeholder="例如：自媒体内容团队" />
+        </Form.Item>
+        <Form.Item label="说明" name="description">
+          <Input.TextArea rows={3} placeholder="说明协作目标、输入输出和审批边界" />
+        </Form.Item>
+        <Form.Item label="工作流" name="workflow">
+          <Select
+            options={[
+              { value: "lead_sequential", label: "Lead Sequential" },
+              { value: "review_chain", label: "Review Chain" },
+              { value: "publish_handoff", label: "Publish Handoff" },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item label="成员顺序" name="agentIds" rules={[{ required: true, message: "请选择至少一个 Agent" }]}>
+          <Select
+            mode="multiple"
+            options={agents.map((agent) => ({ value: agent.key, label: agent.name }))}
+            placeholder="按选择顺序串行执行"
+          />
+        </Form.Item>
+      </Form>
+    </Drawer>
+  );
+}
+
 function KnowledgeDrawer({
   open,
   onClose,
@@ -1735,7 +2347,7 @@ function KnowledgeDrawer({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (values: KnowledgeFormValues) => void;
+  onCreate: (values: KnowledgeFormValues) => void | Promise<void>;
 }) {
   const [form] = Form.useForm<KnowledgeFormValues>();
   return (
@@ -1752,7 +2364,7 @@ function KnowledgeDrawer({
         layout="vertical"
         initialValues={{ type: "SOP", visibility: "project", tags: ["审核"] }}
         onFinish={(values) => {
-          onCreate(values);
+          void onCreate(values);
           form.resetFields();
         }}
       >
@@ -1798,7 +2410,7 @@ function ConnectorDrawer({
   kind: ConnectorKind;
   agents: AgentRecord[];
   onClose: () => void;
-  onCreate: (kind: ConnectorKind, values: ConnectorFormValues) => void;
+  onCreate: (kind: ConnectorKind, values: ConnectorFormValues) => void | Promise<void>;
 }) {
   const [form] = Form.useForm<ConnectorFormValues>();
   return (
@@ -1819,7 +2431,7 @@ function ConnectorDrawer({
           command: kind === "MCP" ? "github-mcp-server stdio" : "pnpm build",
         }}
         onFinish={(values) => {
-          onCreate(kind, values);
+          void onCreate(kind, values);
           form.resetFields();
         }}
       >
