@@ -1968,18 +1968,30 @@ export default function App() {
 
         <Layout>
           <Header className="app-header">
-            <div>
+            <div className="header-copy">
               <Title level={3}>{pageMeta[page].title}</Title>
               <Text type="secondary">{pageMeta[page].subtitle}</Text>
             </div>
-            <Space wrap>
-              <Tag color={workspaceMode === "api" ? "success" : "warning"}>{workspaceMode === "api" ? "SQLite API" : "Static Local"}</Tag>
-              <Input.Search placeholder="搜索任务、Agent、插件、知识" className="global-search" />
-              <Button onClick={exportWorkspace}>导出</Button>
-              <Button onClick={() => importInputRef.current?.click()}>导入</Button>
-              <Button onClick={() => setApprovalOpen(true)}>审批队列</Button>
-              <Button type="primary" onClick={() => setTaskModalOpen(true)}>新建任务</Button>
-            </Space>
+            <div className="header-controls">
+              <Select
+                className="mobile-page-select"
+                value={page}
+                onChange={(value) => setPage(value as PageKey)}
+                options={menuItems.map((item) => ({ value: item.key, label: item.label }))}
+              />
+              <Space wrap className="header-actions">
+                <span className="workspace-mode-tag">
+                  <Tag color={workspaceMode === "api" ? "success" : "warning"}>{workspaceMode === "api" ? "SQLite API" : "Static Local"}</Tag>
+                </span>
+                <span className="global-search-wrap">
+                  <Input.Search placeholder="搜索任务、Agent、插件、知识…" className="global-search" />
+                </span>
+                <Button onClick={exportWorkspace}>导出</Button>
+                <Button onClick={() => importInputRef.current?.click()}>导入</Button>
+                <Button onClick={() => setApprovalOpen(true)}>审批队列</Button>
+                <Button type="primary" onClick={() => setTaskModalOpen(true)}>新建任务</Button>
+              </Space>
+            </div>
           </Header>
           <Content className="app-content">{renderPage()}</Content>
         </Layout>
@@ -2237,7 +2249,7 @@ function TaskRunPanel({
       : [
           {
             color: "gray",
-            content: task.runId ? "正在等待 SSE 事件..." : "本地临时任务尚未创建持久化 run",
+            content: task.runId ? "正在等待 SSE 事件…" : "本地临时任务尚未创建持久化 run",
           },
         ];
 
@@ -2245,7 +2257,7 @@ function TaskRunPanel({
     <Card
       title="运行事件"
       extra={
-        <Space>
+        <Space wrap>
           {task.runId ? <Tag color="processing">SSE</Tag> : <Tag>Local</Tag>}
           <Button size="small" disabled={!task.runId} onClick={() => onAppendEvent(task)}>追加测试事件</Button>
         </Space>
@@ -2571,7 +2583,7 @@ function ConnectorsPage({
 }) {
   return (
     <Space orientation="vertical" size={16} className="full-width">
-      <Card title="MCP 与 CLI 连接器" extra={<Space><Button onClick={onCreateCli}>注册 CLI</Button><Button type="primary" onClick={onCreateMcp}>添加 MCP</Button></Space>}>
+      <Card title="MCP 与 CLI 连接器" extra={<Space wrap><Button onClick={onCreateCli}>注册 CLI</Button><Button type="primary" onClick={onCreateMcp}>添加 MCP</Button></Space>}>
         <Row gutter={[16, 16]}>
           {connectors.map((connector) => (
             <Col xs={24} md={12} xl={6} key={connector.key}>
@@ -2817,7 +2829,7 @@ function WorkflowsPage({
                 <Input.TextArea rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
               </Form.Item>
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item label="Provider">
                     <Select
                       value={provider}
@@ -2831,7 +2843,7 @@ function WorkflowsPage({
                     />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item label="并发度">
                     <Segmented
                       block
@@ -2898,7 +2910,7 @@ function WorkflowsPage({
                       <Text strong>{workflow.name}</Text>
                       <Text type="secondary" className="row-meta">{workflow.description}</Text>
                     </div>
-                    <Space>
+                    <Space wrap>
                       <Button onClick={() => void onRun(workflow)}>运行</Button>
                       <Button onClick={() => setActivePlan(workflow)}>打开</Button>
                     </Space>
@@ -2911,7 +2923,7 @@ function WorkflowsPage({
       </Row>
       <Card
         title="Resume / Feedback 返工入口"
-        extra={<Space><Button onClick={() => workflowImportRef.current?.click()}>导入 YAML</Button><Button onClick={() => void onExportYaml(activePlan)}>导出 YAML</Button></Space>}
+        extra={<Space wrap><Button onClick={() => workflowImportRef.current?.click()}>导入 YAML</Button><Button onClick={() => void onExportYaml(activePlan)}>导出 YAML</Button></Space>}
       >
         <Row gutter={[16, 16]}>
           <Col xs={24} md={8}>
@@ -3047,7 +3059,7 @@ function AssetsPage({
   onExport: () => void;
 }) {
   return (
-    <Card title="资产库" extra={<Space><Button onClick={() => void onCreate()}>登记产物</Button><Button onClick={onExport}>批量导出</Button></Space>}>
+    <Card title="资产库" extra={<Space wrap><Button onClick={() => void onCreate()}>登记产物</Button><Button onClick={onExport}>批量导出</Button></Space>}>
       <Table
         rowKey="key"
         pagination={false}
@@ -3061,7 +3073,7 @@ function AssetsPage({
             title: "操作",
             width: 180,
             render: (_, record) => (
-              <Space>
+              <Space wrap>
                 <Button size="small" onClick={() => void onOpen(record)}>查看</Button>
                 <Button size="small" onClick={() => void onVersion(record)}>新版本</Button>
               </Space>
@@ -3139,17 +3151,17 @@ function SettingsPage({
               }}
             >
               <Row gutter={12}>
-                <Col span={10}>
+                <Col xs={24} md={10}>
                   <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入名称" }]}>
-                    <Input placeholder="OpenAI API Key" />
+                    <Input placeholder="OpenAI API Key…" />
                   </Form.Item>
                 </Col>
-                <Col span={7}>
+                <Col xs={24} sm={12} md={7}>
                   <Form.Item label="Scope" name="scope">
                     <Select options={["runtime", "mcp", "publishing", "team"].map((value) => ({ value, label: value }))} />
                   </Form.Item>
                 </Col>
-                <Col span={7}>
+                <Col xs={24} sm={12} md={7}>
                   <Form.Item label="环境变量" name="envVar" rules={[{ required: true, message: "请输入环境变量名" }]}>
                     <Input />
                   </Form.Item>
@@ -3164,7 +3176,7 @@ function SettingsPage({
                     <Text strong>{secret.name}</Text>
                     <Text type="secondary" className="row-meta">{secret.valuePreview}</Text>
                   </div>
-                  <Space>
+                  <Space wrap>
                     <Tag>{secret.scope}</Tag>
                     <Tag color={secret.status === "available" ? "success" : "warning"}>{secret.status === "available" ? "可用" : "缺失"}</Tag>
                   </Space>
@@ -3329,10 +3341,10 @@ function TaskModal({
           <Input />
         </Form.Item>
         <Form.Item label="任务说明" name="prompt" rules={[{ required: true, message: "请输入任务说明" }]}>
-          <Input.TextArea rows={4} placeholder="描述目标、输入、验收标准和需要生成的产物" />
+          <Input.TextArea rows={4} placeholder="描述目标、输入、验收标准和需要生成的产物…" />
         </Form.Item>
         <Row gutter={12}>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="目标类型" name="targetType">
               <Select
                 options={[
@@ -3343,14 +3355,14 @@ function TaskModal({
               />
             </Form.Item>
           </Col>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="运行目标" name="targetId" rules={[{ required: true, message: "请选择运行目标" }]}>
               <Select options={targetOptions} />
             </Form.Item>
           </Col>
         </Row>
         <Row gutter={12}>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="优先级" name="priority">
               <Radio.Group optionType="button" buttonStyle="solid">
                 <Radio value="normal">普通</Radio>
@@ -3358,7 +3370,7 @@ function TaskModal({
               </Radio.Group>
             </Form.Item>
           </Col>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="启动前审批" name="requiresApproval" valuePropName="checked">
               <Switch />
             </Form.Item>
@@ -3404,25 +3416,25 @@ function AgentDrawer({
         }}
       >
         <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入 Agent 名称" }]}>
-          <Input placeholder="例如：内容审核 Agent" />
+          <Input placeholder="例如：内容审核 Agent…" />
         </Form.Item>
         <Form.Item label="说明" name="description" rules={[{ required: true, message: "请输入 Agent 说明" }]}>
           <Input.TextArea rows={3} />
         </Form.Item>
         <Row gutter={12}>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="Runtime" name="runtime">
               <Select options={["Codex", "OpenCode", "BrowserOps", "GenericAgent"].map((value) => ({ value, label: value }))} />
             </Form.Item>
           </Col>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="模型" name="model">
               <Select options={["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"].map((value) => ({ value, label: value }))} />
             </Form.Item>
           </Col>
         </Row>
         <Form.Item label="系统提示词" name="systemPrompt">
-          <Input.TextArea rows={5} placeholder="描述角色、边界、输出格式和审批策略" />
+          <Input.TextArea rows={5} placeholder="描述角色、边界、输出格式和审批策略…" />
         </Form.Item>
         <Form.Item label="绑定 Skills" name="skillIds">
           <Select
@@ -3479,10 +3491,10 @@ function AgentTeamDrawer({
         }}
       >
         <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入 Team 名称" }]}>
-          <Input placeholder="例如：自媒体内容团队" />
+          <Input placeholder="例如：自媒体内容团队…" />
         </Form.Item>
         <Form.Item label="说明" name="description">
-          <Input.TextArea rows={3} placeholder="说明协作目标、输入输出和审批边界" />
+          <Input.TextArea rows={3} placeholder="说明协作目标、输入输出和审批边界…" />
         </Form.Item>
         <Form.Item label="工作流" name="workflow">
           <Select
@@ -3497,7 +3509,7 @@ function AgentTeamDrawer({
           <Select
             mode="multiple"
             options={agents.map((agent) => ({ value: agent.key, label: agent.name }))}
-            placeholder="按选择顺序串行执行"
+            placeholder="按选择顺序串行执行…"
           />
         </Form.Item>
       </Form>
@@ -3534,15 +3546,15 @@ function KnowledgeDrawer({
         }}
       >
         <Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入知识标题" }]}>
-          <Input placeholder="例如：公众号发布前审核 SOP" />
+          <Input placeholder="例如：公众号发布前审核 SOP…" />
         </Form.Item>
         <Row gutter={12}>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="类型" name="type">
               <Select options={["SOP", "品牌", "平台规则", "决策", "代码文档"].map((value) => ({ value, label: value }))} />
             </Form.Item>
           </Col>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="可见范围" name="visibility">
               <Select
                 options={[
@@ -3554,10 +3566,10 @@ function KnowledgeDrawer({
           </Col>
         </Row>
         <Form.Item label="标签" name="tags">
-          <Select mode="tags" placeholder="输入后回车" />
+          <Select mode="tags" placeholder="输入后回车…" />
         </Form.Item>
         <Form.Item label="正文" name="content" rules={[{ required: true, message: "请输入知识正文" }]}>
-          <Input.TextArea rows={8} placeholder="支持粘贴 Markdown、会议纪要、规则摘要或代码文档片段" />
+          <Input.TextArea rows={8} placeholder="支持粘贴 Markdown、会议纪要、规则摘要或代码文档片段…" />
         </Form.Item>
       </Form>
     </Drawer>
@@ -3607,10 +3619,10 @@ function ConnectorDrawer({
           <Input />
         </Form.Item>
         <Form.Item label="说明" name="description" rules={[{ required: true, message: "请输入说明" }]}>
-          <Input.TextArea rows={3} placeholder="说明用途、参数、输出格式和失败诊断方式" />
+          <Input.TextArea rows={3} placeholder="说明用途、参数、输出格式和失败诊断方式…" />
         </Form.Item>
         <Row gutter={12}>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="风险等级" name="risk">
               <Select
                 options={[
@@ -3621,7 +3633,7 @@ function ConnectorDrawer({
               />
             </Form.Item>
           </Col>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item label="默认绑定" name="binding">
               <Select options={agents.map((agent) => ({ value: agent.name, label: agent.name }))} />
             </Form.Item>
