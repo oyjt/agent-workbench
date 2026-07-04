@@ -51,26 +51,35 @@ import {
   createApiAgent,
   createApiAgentTeam,
   createApiArtifact,
+  createApiArtifactVersion,
   createApiConnector,
   createApiKnowledgeItem,
+  createApiSecret,
   createApiTask,
   createApiWorkflow,
+  exportApiWorkflowYaml,
+  getApiArtifactContent,
+  importApiWorkflowYaml,
   invokeApiConnector,
+  invokeApiMcpTool,
   listApiAgents,
   listApiAgentTeams,
   listApiApprovals,
   listApiArtifacts,
   listApiConnectors,
   listApiKnowledgeItems,
+  listApiRunEvents,
+  listApiSecrets,
   listApiTasks,
   listApiWorkflows,
   respondApiApproval,
+  runApiWorkflow,
   scanApiPlugins,
   scanApiSkills,
   startApiTask,
   updateApiTaskStatus,
 } from "./api";
-import type { ApiAgent, ApiAgentTeam, ApiApproval, ApiArtifact, ApiConnector, ApiKnowledgeItem, ApiRunEvent, ApiSkill, ApiTask, ApiWorkflow, ApiWorkflowPlugin } from "./api";
+import type { ApiAgent, ApiAgentTeam, ApiApproval, ApiArtifact, ApiArtifactVersion, ApiConnector, ApiKnowledgeItem, ApiRunEvent, ApiSecret, ApiSkill, ApiTask, ApiWorkflow, ApiWorkflowPlugin } from "./api";
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -186,6 +195,33 @@ type ArtifactRecord = {
   summary: string;
   path: string;
   updatedAt: string;
+  content?: string;
+  versions?: ArtifactVersionRecord[];
+  manifest?: Record<string, unknown>;
+};
+
+type ArtifactVersionRecord = {
+  key: string;
+  version: number;
+  path: string;
+  summary: string;
+  bytes: number;
+  createdAt: string;
+};
+
+type SecretRecord = {
+  key: string;
+  name: string;
+  scope: string;
+  envVar: string;
+  status: "available" | "missing";
+  valuePreview: string;
+};
+
+type ArtifactPreviewState = {
+  open: boolean;
+  artifact?: ArtifactRecord;
+  content: string;
 };
 
 type TaskFormValues = {
@@ -231,6 +267,12 @@ type ConnectorFormValues = {
   binding: string;
 };
 
+type SecretFormValues = {
+  name: string;
+  scope: string;
+  envVar: string;
+};
+
 type WorkspaceMode = "api" | "static";
 
 type WorkbenchSnapshot = {
@@ -246,9 +288,12 @@ type WorkbenchSnapshot = {
   artifacts: ArtifactRecord[];
   savedWorkflows: WorkflowPlan[];
   runEvents: Record<string, ApiRunEvent[]>;
+  secrets?: SecretRecord[];
 };
 
 const STATIC_WORKSPACE_KEY = "agent-workbench-static-workspace-v1";
+const STATIC_WORKSPACE_DB = "agent-workbench-static-db";
+const STATIC_WORKSPACE_STORE = "snapshots";
 
 const pageMeta: Record<PageKey, { title: string; subtitle: string }> = {
   overview: { title: "工作台", subtitle: "任务、审批、产物和运行状态集中管理" },
@@ -461,6 +506,17 @@ const initialArtifacts: ArtifactRecord[] = [
   { key: "asset_diff", file: "capability-gate.diff", type: "DIFF", source: "Codex", summary: "能力闸口变更摘要", path: "artifact://demo/capability-gate.diff", updatedAt: "1 小时前" },
 ];
 
+const initialSecrets: SecretRecord[] = [
+  {
+    key: "secret_openai",
+    name: "OpenAI API Key",
+    scope: "runtime",
+    envVar: "OPENAI_API_KEY",
+    status: "missing",
+    valuePreview: "OPENAI_API_KEY=<missing>",
+  },
+];
+
 const staticSkills: ApiSkill[] = [
   {
     id: "content-planner",
@@ -613,6 +669,18 @@ function artifactFromApi(artifact: ApiArtifact): ArtifactRecord {
     summary: artifact.summary,
     path: artifact.path,
     updatedAt: formatTime(artifact.updatedAt),
+    manifest: artifact.manifest,
+  };
+}
+
+function artifactVersionFromApi(version: ApiArtifactVersion): ArtifactVersionRecord {
+  return {
+    key: version.id,
+    version: version.version,
+    path: version.path,
+    summary: version.summary,
+    bytes: version.bytes,
+    createdAt: formatTime(version.createdAt),
   };
 }
 
@@ -625,6 +693,17 @@ function workflowFromApi(workflow: ApiWorkflow): WorkflowPlan {
     concurrency: workflow.concurrency,
     tags: workflow.tags,
     steps: workflow.steps,
+  };
+}
+
+function secretFromApi(secret: ApiSecret): SecretRecord {
+  return {
+    key: secret.id,
+    name: secret.name,
+    scope: secret.scope,
+    envVar: secret.envVar,
+    status: secret.status,
+    valuePreview: secret.valuePreview,
   };
 }
 
@@ -668,6 +747,9 @@ function createBrowserEvent(runId: string, type: string, payload: unknown): ApiR
 
 function createArtifactRecord(task: Task, runId: string, kind: "markdown" | "diff" = task.runtime === "Codex" ? "diff" : "markdown"): ArtifactRecord {
   const extension = kind === "diff" ? "diff.md" : "draft.md";
+  const content = kind === "diff"
+    ? [`# ${task.title} · Diff Summary`, "", "```diff", "+ static workflow execution", "+ artifact version generated", "```", ""].join("\n")
+    : [`# ${task.title}`, "", task.description, "", "静态模式生成的本地草稿，可导出或继续返工。", ""].join("\n");
   return {
     key: createBrowserId("artifact"),
     file: `${task.title} · ${extension}`,
@@ -676,6 +758,18 @@ function createArtifactRecord(task: Task, runId: string, kind: "markdown" | "dif
     summary: kind === "diff" ? "浏览器本地模拟的代码变更摘要。" : "浏览器本地模拟的内容草稿。",
     path: `browser://artifacts/${task.key}/${extension}`,
     updatedAt: nowLabel(),
+    content,
+    versions: [
+      {
+        key: createBrowserId("artifact_version"),
+        version: 1,
+        path: `browser://artifacts/${task.key}/${extension}`,
+        summary: "浏览器本地首版产物。",
+        bytes: new Blob([content]).size,
+        createdAt: nowLabel(),
+      },
+    ],
+    manifest: { taskKey: task.key, runId, mode: "static" },
   };
 }
 
@@ -694,14 +788,183 @@ function createStaticRunEvents(task: Task, runId: string, artifact: ArtifactReco
   ];
 }
 
-function loadStaticSnapshot() {
+function serializeWorkflowYaml(plan: WorkflowPlan) {
+  const lines = [
+    `name: ${JSON.stringify(plan.name)}`,
+    `description: ${JSON.stringify(plan.description)}`,
+    `provider: ${JSON.stringify(plan.provider)}`,
+    `concurrency: ${plan.concurrency}`,
+    "tags:",
+    ...plan.tags.map((tag) => `  - ${JSON.stringify(tag)}`),
+    "steps:",
+  ];
+
+  for (const step of plan.steps) {
+    lines.push(`  - id: ${JSON.stringify(step.id)}`);
+    lines.push(`    role: ${JSON.stringify(step.role)}`);
+    lines.push(`    task: ${JSON.stringify(step.task)}`);
+    if (step.output) lines.push(`    output: ${JSON.stringify(step.output)}`);
+    if (step.type) lines.push(`    type: ${JSON.stringify(step.type)}`);
+    lines.push("    dependsOn:");
+    if (step.dependsOn.length === 0) lines.push("      []");
+    else step.dependsOn.forEach((dep) => lines.push(`      - ${JSON.stringify(dep)}`));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function parseWorkflowYaml(yaml: string): WorkflowPlan {
+  const plan: WorkflowPlan = {
+    key: createBrowserId("workflow"),
+    name: "导入工作流",
+    description: "",
+    provider: "codex-cli",
+    concurrency: 1,
+    tags: [],
+    steps: [],
+  };
+  let mode = "";
+  let currentStep: WorkflowStepRecord | null = null;
+  let dependsOn = false;
+
+  for (const rawLine of yaml.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    if (!line.startsWith(" ")) {
+      dependsOn = false;
+      if (trimmed === "tags:") {
+        mode = "tags";
+        continue;
+      }
+      if (trimmed === "steps:") {
+        mode = "steps";
+        continue;
+      }
+      const [key, value] = splitYamlPair(trimmed);
+      if (key === "name") plan.name = unquoteYamlValue(value);
+      if (key === "description") plan.description = unquoteYamlValue(value);
+      if (key === "provider") plan.provider = unquoteYamlValue(value);
+      if (key === "concurrency") plan.concurrency = Number(value) || 1;
+      continue;
+    }
+
+    if (mode === "tags" && trimmed.startsWith("- ")) {
+      plan.tags.push(unquoteYamlValue(trimmed.slice(2)));
+      continue;
+    }
+
+    if (mode !== "steps") continue;
+    if (trimmed.startsWith("- id:")) {
+      currentStep = { id: unquoteYamlValue(trimmed.slice(5).trim()), role: "", task: "", dependsOn: [] };
+      plan.steps.push(currentStep);
+      dependsOn = false;
+      continue;
+    }
+    if (!currentStep) continue;
+    if (trimmed === "dependsOn:") {
+      dependsOn = true;
+      currentStep.dependsOn = [];
+      continue;
+    }
+    if (dependsOn && trimmed.startsWith("- ")) {
+      currentStep.dependsOn.push(unquoteYamlValue(trimmed.slice(2)));
+      continue;
+    }
+    if (dependsOn && trimmed === "[]") {
+      currentStep.dependsOn = [];
+      continue;
+    }
+    dependsOn = false;
+    const [key, value] = splitYamlPair(trimmed);
+    if (key === "role") currentStep.role = unquoteYamlValue(value);
+    if (key === "task") currentStep.task = unquoteYamlValue(value);
+    if (key === "output") currentStep.output = unquoteYamlValue(value);
+    if (key === "type") currentStep.type = unquoteYamlValue(value) as WorkflowStepRecord["type"];
+  }
+
+  plan.steps = plan.steps.filter((step) => step.id && step.role && step.task);
+  if (plan.steps.length === 0) throw new Error("empty_workflow");
+  return plan;
+}
+
+function splitYamlPair(line: string) {
+  const separator = line.indexOf(":");
+  if (separator === -1) return [line, ""];
+  return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
+}
+
+function unquoteYamlValue(value: string) {
+  const trimmed = value.trim();
   try {
+    return JSON.parse(trimmed) as string;
+  } catch {
+    return trimmed.replace(/^["']|["']$/g, "");
+  }
+}
+
+function downloadTextFile(filename: string, content: string, type = "text/plain") {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function openStaticWorkspaceDb() {
+  return new Promise<IDBDatabase>((resolveDb, rejectDb) => {
+    const request = window.indexedDB.open(STATIC_WORKSPACE_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STATIC_WORKSPACE_STORE)) {
+        db.createObjectStore(STATIC_WORKSPACE_STORE);
+      }
+    };
+    request.onsuccess = () => resolveDb(request.result);
+    request.onerror = () => rejectDb(request.error ?? new Error("indexeddb_open_failed"));
+  });
+}
+
+async function loadStaticSnapshot() {
+  try {
+    if (window.indexedDB) {
+      const db = await openStaticWorkspaceDb();
+      const snapshot = await new Promise<WorkbenchSnapshot | null>((resolveSnapshot, rejectSnapshot) => {
+        const transaction = db.transaction(STATIC_WORKSPACE_STORE, "readonly");
+        const request = transaction.objectStore(STATIC_WORKSPACE_STORE).get(STATIC_WORKSPACE_KEY);
+        request.onsuccess = () => resolveSnapshot((request.result as WorkbenchSnapshot | undefined) ?? null);
+        request.onerror = () => rejectSnapshot(request.error ?? new Error("indexeddb_read_failed"));
+      });
+      db.close();
+      if (snapshot?.version === 1) return snapshot;
+    }
+
     const raw = window.localStorage.getItem(STATIC_WORKSPACE_KEY);
     if (!raw) return null;
-    const snapshot = JSON.parse(raw) as WorkbenchSnapshot;
-    return snapshot.version === 1 ? snapshot : null;
+    const fallback = JSON.parse(raw) as WorkbenchSnapshot;
+    return fallback.version === 1 ? fallback : null;
   } catch {
     return null;
+  }
+}
+
+async function saveStaticSnapshot(snapshot: WorkbenchSnapshot) {
+  try {
+    if (window.indexedDB) {
+      const db = await openStaticWorkspaceDb();
+      await new Promise<void>((resolveSave, rejectSave) => {
+        const transaction = db.transaction(STATIC_WORKSPACE_STORE, "readwrite");
+        const request = transaction.objectStore(STATIC_WORKSPACE_STORE).put(snapshot, STATIC_WORKSPACE_KEY);
+        request.onsuccess = () => resolveSave();
+        request.onerror = () => rejectSave(request.error ?? new Error("indexeddb_write_failed"));
+      });
+      db.close();
+    }
+    window.localStorage.setItem(STATIC_WORKSPACE_KEY, JSON.stringify(snapshot));
+  } catch {
+    window.localStorage.setItem(STATIC_WORKSPACE_KEY, JSON.stringify(snapshot));
   }
 }
 
@@ -720,9 +983,11 @@ export default function App() {
   const [approvals, setApprovals] = useState<ApprovalRecord[]>(initialApprovals);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>(initialArtifacts);
   const [savedWorkflows, setSavedWorkflows] = useState<WorkflowPlan[]>([]);
+  const [secrets, setSecrets] = useState<SecretRecord[]>(initialSecrets);
   const [skills, setSkills] = useState<ApiSkill[]>([]);
   const [workflowPlugins, setWorkflowPlugins] = useState<ApiWorkflowPlugin[]>([]);
   const [runEvents, setRunEvents] = useState<Record<string, ApiRunEvent[]>>({});
+  const [artifactPreview, setArtifactPreview] = useState<ArtifactPreviewState>({ open: false, content: "" });
   const [taskFilter, setTaskFilter] = useState<string>("全部");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [pluginOpen, setPluginOpen] = useState(false);
@@ -749,6 +1014,7 @@ export default function App() {
       artifacts,
       savedWorkflows,
       runEvents,
+      secrets,
     };
   }
 
@@ -763,6 +1029,7 @@ export default function App() {
     setArtifacts(snapshot.artifacts.length > 0 ? snapshot.artifacts : initialArtifacts);
     setSavedWorkflows(snapshot.savedWorkflows);
     setRunEvents(snapshot.runEvents);
+    setSecrets(snapshot.secrets && snapshot.secrets.length > 0 ? snapshot.secrets : initialSecrets);
   }
 
   useEffect(() => {
@@ -770,7 +1037,7 @@ export default function App() {
 
     async function loadWorkspaceData() {
       try {
-        const [taskResult, agentResult, teamResult, knowledgeResult, connectorResult, approvalResult, artifactResult, workflowResult] = await Promise.all([
+        const [taskResult, agentResult, teamResult, knowledgeResult, connectorResult, approvalResult, artifactResult, workflowResult, secretResult] = await Promise.all([
           listApiTasks(),
           listApiAgents(),
           listApiAgentTeams(),
@@ -779,6 +1046,7 @@ export default function App() {
           listApiApprovals(),
           listApiArtifacts(),
           listApiWorkflows(),
+          listApiSecrets(),
         ]);
         const [skillResult, pluginResult] = await Promise.all([scanApiSkills(), scanApiPlugins()]);
 
@@ -792,6 +1060,7 @@ export default function App() {
         const apiApprovals = approvalResult.approvals.map(approvalFromApi);
         const apiArtifacts = artifactResult.artifacts.map(artifactFromApi);
         const apiWorkflows = workflowResult.workflows.map(workflowFromApi);
+        const apiSecrets = secretResult.secrets.map(secretFromApi);
 
         if (apiTasks.length > 0) {
           setTasks(apiTasks);
@@ -803,6 +1072,7 @@ export default function App() {
         if (apiConnectors.length > 0) setConnectors(apiConnectors);
         if (apiArtifacts.length > 0) setArtifacts(apiArtifacts);
         setSavedWorkflows(apiWorkflows);
+        setSecrets(apiSecrets.length > 0 ? apiSecrets : initialSecrets);
         setApprovals(apiApprovals);
         setSkills(skillResult.skills);
         setWorkflowPlugins(pluginResult.plugins);
@@ -810,7 +1080,7 @@ export default function App() {
         setWorkspaceLoaded(true);
       } catch {
         if (!cancelled) {
-          const snapshot = loadStaticSnapshot();
+          const snapshot = await loadStaticSnapshot();
           if (snapshot) applySnapshot(snapshot);
           setSkills(staticSkills);
           setWorkflowPlugins(staticWorkflowPlugins);
@@ -830,8 +1100,8 @@ export default function App() {
 
   useEffect(() => {
     if (!workspaceLoaded || workspaceMode !== "static") return;
-    window.localStorage.setItem(STATIC_WORKSPACE_KEY, JSON.stringify(currentSnapshot()));
-  }, [workspaceLoaded, workspaceMode, tasks, selectedTask, agents, agentTeams, knowledgeItems, connectors, approvals, artifacts, savedWorkflows, runEvents]);
+    void saveStaticSnapshot(currentSnapshot());
+  }, [workspaceLoaded, workspaceMode, tasks, selectedTask, agents, agentTeams, knowledgeItems, connectors, approvals, artifacts, savedWorkflows, runEvents, secrets]);
 
   useEffect(() => {
     if (!selectedTask.runId || workspaceMode === "static") return;
@@ -1189,6 +1459,7 @@ export default function App() {
 
   async function createManualArtifact() {
     if (workspaceMode === "static") {
+      const content = [`# ${selectedTask.title} · Handoff`, "", "浏览器本地登记的交付摘要。", ""].join("\n");
       setArtifacts((current) => [
         {
           key: createBrowserId("artifact"),
@@ -1198,6 +1469,18 @@ export default function App() {
           summary: "浏览器本地登记的交付摘要。",
           path: `browser://artifacts/${selectedTask.key}/handoff.md`,
           updatedAt: nowLabel(),
+          content,
+          versions: [
+            {
+              key: createBrowserId("artifact_version"),
+              version: 1,
+              path: `browser://artifacts/${selectedTask.key}/handoff.md`,
+              summary: "手动登记首版。",
+              bytes: new Blob([content]).size,
+              createdAt: nowLabel(),
+            },
+          ],
+          manifest: { taskKey: selectedTask.key, mode: "static" },
         },
         ...current,
       ]);
@@ -1215,11 +1498,117 @@ export default function App() {
         source: selectedTask.runtime,
         path: `.agent-workbench/artifacts/${selectedTask.key}/handoff.md`,
         manifest: { sourceTaskId: selectedTask.key, runtime: selectedTask.runtime },
+        content: [`# ${selectedTask.title} · Handoff`, "", "人工登记的交付摘要，用于验证 Artifact 文件写入和版本持久化。", ""].join("\n"),
       });
       setArtifacts((current) => [artifactFromApi(result.artifact), ...current]);
       messageApi.success("Artifact 已写入 SQLite");
     } catch {
       messageApi.error("Artifact 登记失败，请确认 API server 正在运行");
+    }
+  }
+
+  async function openArtifact(artifact: ArtifactRecord) {
+    if (workspaceMode === "static" || artifact.path.startsWith("browser://") || artifact.path.startsWith("artifact://")) {
+      setArtifactPreview({
+        open: true,
+        artifact,
+        content: artifact.content ?? `# ${artifact.file}\n\n${artifact.summary}\n\n路径：${artifact.path}\n`,
+      });
+      return;
+    }
+
+    try {
+      const result = await getApiArtifactContent(artifact.key);
+      const nextArtifact = {
+        ...artifactFromApi(result.artifact),
+        content: result.content,
+        versions: result.versions.map(artifactVersionFromApi),
+      };
+      setArtifacts((current) => current.map((item) => (item.key === artifact.key ? nextArtifact : item)));
+      setArtifactPreview({ open: true, artifact: nextArtifact, content: result.content });
+    } catch {
+      messageApi.error("读取 Artifact 内容失败");
+    }
+  }
+
+  async function createArtifactVersion(artifact: ArtifactRecord) {
+    const baseContent = artifact.content ?? `# ${artifact.file}\n\n${artifact.summary}\n`;
+    const nextContent = `${baseContent.trim()}\n\n## Revision ${new Date().toLocaleString()}\n\n记录一次人工返工或版本确认。\n`;
+
+    if (workspaceMode === "static" || artifact.path.startsWith("browser://") || artifact.path.startsWith("artifact://")) {
+      const version: ArtifactVersionRecord = {
+        key: createBrowserId("artifact_version"),
+        version: (artifact.versions?.length ?? 0) + 1,
+        path: artifact.path,
+        summary: "浏览器本地新增版本。",
+        bytes: new Blob([nextContent]).size,
+        createdAt: nowLabel(),
+      };
+      const nextArtifact = {
+        ...artifact,
+        content: nextContent,
+        versions: [version, ...(artifact.versions ?? [])],
+        updatedAt: nowLabel(),
+      };
+      setArtifacts((current) => current.map((item) => (item.key === artifact.key ? nextArtifact : item)));
+      setArtifactPreview({ open: true, artifact: nextArtifact, content: nextContent });
+      messageApi.success("Artifact 新版本已保存到浏览器本地");
+      return;
+    }
+
+    try {
+      const result = await createApiArtifactVersion(artifact.key, {
+        content: nextContent,
+        summary: "人工返工版本。",
+        contentType: "text/markdown",
+      });
+      const version = artifactVersionFromApi(result.version);
+      const nextArtifact = {
+        ...artifact,
+        content: nextContent,
+        versions: [version, ...(artifact.versions ?? [])],
+        path: version.path,
+        updatedAt: nowLabel(),
+      };
+      setArtifacts((current) => current.map((item) => (item.key === artifact.key ? nextArtifact : item)));
+      setArtifactPreview({ open: true, artifact: nextArtifact, content: nextContent });
+      messageApi.success("Artifact 新版本已写入本地文件");
+    } catch {
+      messageApi.error("新增 Artifact 版本失败，请确认 API server 正在运行");
+    }
+  }
+
+  function exportArtifacts() {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      artifacts,
+    };
+    downloadTextFile(`agent-workbench-artifacts-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), "application/json");
+  }
+
+  async function createSecret(values: SecretFormValues) {
+    if (workspaceMode === "static") {
+      setSecrets((current) => [
+        {
+          key: createBrowserId("secret"),
+          name: values.name,
+          scope: values.scope,
+          envVar: values.envVar,
+          status: "missing",
+          valuePreview: `${values.envVar}=<browser-local>`,
+        },
+        ...current,
+      ]);
+      messageApi.success("Secret 引用已保存到浏览器本地");
+      return;
+    }
+
+    try {
+      const result = await createApiSecret(values);
+      setSecrets((current) => [secretFromApi(result.secret), ...current]);
+      messageApi.success("Secret 引用已写入 SQLite");
+    } catch {
+      messageApi.error("Secret 注册失败，请确认 API server 正在运行");
     }
   }
 
@@ -1243,6 +1632,135 @@ export default function App() {
       messageApi.success("工作流已写入 SQLite");
     } catch {
       messageApi.error("工作流保存失败，请确认 API server 正在运行");
+    }
+  }
+
+  async function exportWorkflowYaml(plan: WorkflowPlan) {
+    try {
+      const yaml = workspaceMode === "api" && plan.key.startsWith("workflow_")
+        ? await exportApiWorkflowYaml(plan.key)
+        : serializeWorkflowYaml(plan);
+      downloadTextFile(`${plan.name}.workflow.yml`, yaml, "text/yaml");
+      messageApi.success("工作流 YAML 已导出");
+    } catch {
+      downloadTextFile(`${plan.name}.workflow.yml`, serializeWorkflowYaml(plan), "text/yaml");
+      messageApi.warning("API 未返回 YAML，已导出前端版本");
+    }
+  }
+
+  async function importWorkflowYaml(file?: File) {
+    if (!file) return;
+    try {
+      const yaml = await file.text();
+      if (workspaceMode === "static") {
+        const plan = parseWorkflowYaml(yaml);
+        setSavedWorkflows((current) => [plan, ...current]);
+        messageApi.success("工作流 YAML 已导入浏览器本地");
+        return;
+      }
+
+      const result = await importApiWorkflowYaml(yaml);
+      setSavedWorkflows((current) => [workflowFromApi(result.workflow), ...current]);
+      messageApi.success("工作流 YAML 已写入 SQLite");
+    } catch {
+      messageApi.error("导入失败，请确认 YAML 是 Agent Workbench 工作流格式");
+    }
+  }
+
+  async function runWorkflowPlan(plan: WorkflowPlan, options?: { fromStepId?: string; feedback?: string }) {
+    if (workspaceMode === "static") {
+      const runId = createBrowserId("run");
+      const selectedSteps = options?.fromStepId ? affectedWorkflowSteps(plan.steps, options.fromStepId) : plan.steps;
+      const task: Task = {
+        key: createBrowserId("task"),
+        runId,
+        title: options?.fromStepId ? `${plan.name} · 从 ${options.fromStepId} 返工` : `${plan.name} · DAG 执行`,
+        description: options?.feedback || plan.description,
+        owner: "Workflow Engine",
+        runtime: plan.provider,
+        status: "done",
+        target: plan.name,
+        updatedAt: nowLabel(),
+      };
+      const content = [
+        `# ${task.title}`,
+        "",
+        `- Provider: ${plan.provider}`,
+        `- From step: ${options?.fromStepId ?? "full"}`,
+        `- Feedback: ${options?.feedback || "none"}`,
+        "",
+        "## Steps",
+        "",
+        ...selectedSteps.map((step) => `- ${step.id}: ${step.role} -> ${step.output ?? "step_output"}`),
+        "",
+      ].join("\n");
+      const artifact: ArtifactRecord = {
+        key: createBrowserId("artifact"),
+        file: `${plan.name} · workflow-run.md`,
+        type: "MARKDOWN",
+        source: "Workflow Engine",
+        summary: options?.fromStepId ? `从 ${options.fromStepId} 开始的返工摘要。` : "DAG 工作流执行摘要。",
+        path: `browser://workflows/${plan.key}/${runId}.md`,
+        updatedAt: nowLabel(),
+        content,
+        versions: [
+          {
+            key: createBrowserId("artifact_version"),
+            version: 1,
+            path: `browser://workflows/${plan.key}/${runId}.md`,
+            summary: "静态工作流执行结果。",
+            bytes: new Blob([content]).size,
+            createdAt: nowLabel(),
+          },
+        ],
+        manifest: { workflowKey: plan.key, fromStepId: options?.fromStepId, mode: "static" },
+      };
+      setTasks((current) => [task, ...current]);
+      setSelectedTask(task);
+      setArtifacts((current) => [artifact, ...current]);
+      setRunEvents((current) => ({
+        ...current,
+        [runId]: [
+          createBrowserEvent(runId, "workflow.started", { workflowKey: plan.key, name: plan.name, fromStepId: options?.fromStepId }),
+          ...selectedSteps.flatMap((step) => [
+            createBrowserEvent(runId, "workflow.step.started", { stepId: step.id, role: step.role }),
+            createBrowserEvent(runId, "workflow.step.completed", { stepId: step.id, output: step.output ?? `${step.id}_output` }),
+          ]),
+          createBrowserEvent(runId, "artifact.created", { artifactId: artifact.key, title: artifact.file }),
+          createBrowserEvent(runId, "run.status_changed", { status: "done" }),
+        ],
+      }));
+      setPage("overview");
+      messageApi.success("静态工作流已执行并生成 Artifact");
+      return;
+    }
+
+    try {
+      let workflowId = plan.key;
+      if (!workflowId.startsWith("workflow_")) {
+        const saved = await createApiWorkflow({
+          name: plan.name,
+          description: plan.description,
+          provider: plan.provider,
+          concurrency: plan.concurrency,
+          tags: plan.tags,
+          steps: plan.steps,
+        });
+        const savedPlan = workflowFromApi(saved.workflow);
+        workflowId = savedPlan.key;
+        setSavedWorkflows((current) => [savedPlan, ...current]);
+      }
+      const result = await runApiWorkflow(workflowId, options);
+      const task = taskFromApi(result.task);
+      setTasks((current) => [task, ...current]);
+      setSelectedTask(task);
+      if (result.artifact) setArtifacts((current) => [artifactFromApi(result.artifact!), ...current]);
+      const events = await listApiRunEvents(result.runId);
+      setRunEvents((current) => ({ ...current, [result.runId]: events.events }));
+      setPage("overview");
+      messageApi.success("工作流已通过本地 API 执行");
+    } catch {
+      messageApi.error("工作流执行失败，请确认 API server 正在运行");
     }
   }
 
@@ -1507,6 +2025,26 @@ export default function App() {
           onClose={() => setConnectorDrawer((current) => ({ ...current, open: false }))}
           onCreate={createConnector}
         />
+        <Modal
+          title={artifactPreview.artifact?.file ?? "Artifact"}
+          open={artifactPreview.open}
+          onCancel={() => setArtifactPreview({ open: false, content: "" })}
+          footer={artifactPreview.artifact ? [
+            <Button key="download" onClick={() => downloadTextFile(artifactPreview.artifact!.file, artifactPreview.content, "text/markdown")}>下载</Button>,
+            <Button key="version" type="primary" onClick={() => void createArtifactVersion(artifactPreview.artifact!)}>新增版本</Button>,
+          ] : null}
+          width={820}
+        >
+          <pre className="artifact-content-preview">{artifactPreview.content}</pre>
+          {artifactPreview.artifact?.versions?.length ? (
+            <Timeline
+              className="top-gap"
+              items={artifactPreview.artifact.versions.map((version) => ({
+                children: `v${version.version} · ${version.summary} · ${version.bytes} bytes · ${version.createdAt}`,
+              }))}
+            />
+          ) : null}
+        </Modal>
       </Layout>
     </>
   );
@@ -1636,11 +2174,19 @@ export default function App() {
       case "creative":
         return <CreativePage />;
       case "workflows":
-        return <WorkflowsPage savedWorkflows={savedWorkflows} onSave={saveWorkflow} />;
+        return (
+          <WorkflowsPage
+            savedWorkflows={savedWorkflows}
+            onSave={saveWorkflow}
+            onRun={runWorkflowPlan}
+            onExportYaml={exportWorkflowYaml}
+            onImportYaml={importWorkflowYaml}
+          />
+        );
       case "assets":
-        return <AssetsPage artifacts={artifacts} onCreate={createManualArtifact} />;
+        return <AssetsPage artifacts={artifacts} onCreate={createManualArtifact} onOpen={openArtifact} onVersion={createArtifactVersion} onExport={exportArtifacts} />;
       case "settings":
-        return <SettingsPage />;
+        return <SettingsPage secrets={secrets} onCreateSecret={createSecret} />;
     }
   }
 }
@@ -2163,10 +2709,17 @@ function DiffPreview() {
 function WorkflowsPage({
   savedWorkflows,
   onSave,
+  onRun,
+  onExportYaml,
+  onImportYaml,
 }: {
   savedWorkflows: WorkflowPlan[];
   onSave: (plan: WorkflowPlan) => void | Promise<void>;
+  onRun: (plan: WorkflowPlan, options?: { fromStepId?: string; feedback?: string }) => void | Promise<void>;
+  onExportYaml: (plan: WorkflowPlan) => void | Promise<void>;
+  onImportYaml: (file?: File) => void | Promise<void>;
 }) {
+  const workflowImportRef = useRef<HTMLInputElement>(null);
   const templates = useMemo<WorkflowPlan[]>(
     () => [
       {
@@ -2221,6 +2774,8 @@ function WorkflowsPage({
   const [provider, setProvider] = useState("codex-cli");
   const [concurrency, setConcurrency] = useState(2);
   const [activePlan, setActivePlan] = useState<WorkflowPlan>(templates[1]);
+  const [rerunStep, setRerunStep] = useState<string>(templates[1].steps[0].id);
+  const [feedback, setFeedback] = useState("保留已完成步骤，只重写正文和发布包，语气更克制。");
 
   function composeFromPrompt() {
     setActivePlan({
@@ -2241,8 +2796,19 @@ function WorkflowsPage({
     });
   }
 
+  useEffect(() => {
+    setRerunStep(activePlan.steps[0]?.id ?? "");
+  }, [activePlan]);
+
   return (
     <Space orientation="vertical" size={16} className="full-width">
+      <input
+        ref={workflowImportRef}
+        type="file"
+        accept=".yml,.yaml,text/yaml"
+        hidden
+        onChange={(event) => void onImportYaml(event.target.files?.[0])}
+      />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={10}>
           <Card title="一句话自动编排" extra={<Tag color="processing">AO-inspired</Tag>}>
@@ -2281,7 +2847,7 @@ function WorkflowsPage({
           </Card>
         </Col>
         <Col xs={24} xl={14}>
-          <WorkflowDagPreview plan={activePlan} onSave={onSave} />
+          <WorkflowDagPreview plan={activePlan} onSave={onSave} onRun={onRun} onExportYaml={onExportYaml} />
         </Col>
       </Row>
       <Row gutter={[16, 16]}>
@@ -2332,7 +2898,10 @@ function WorkflowsPage({
                       <Text strong>{workflow.name}</Text>
                       <Text type="secondary" className="row-meta">{workflow.description}</Text>
                     </div>
-                    <Button onClick={() => setActivePlan(workflow)}>打开</Button>
+                    <Space>
+                      <Button onClick={() => void onRun(workflow)}>运行</Button>
+                      <Button onClick={() => setActivePlan(workflow)}>打开</Button>
+                    </Space>
                   </div>
                 ))}
               </div>
@@ -2340,19 +2909,32 @@ function WorkflowsPage({
           </Card>
         </Col>
       </Row>
-      <Card title="Resume / Feedback 返工入口">
+      <Card
+        title="Resume / Feedback 返工入口"
+        extra={<Space><Button onClick={() => workflowImportRef.current?.click()}>导入 YAML</Button><Button onClick={() => void onExportYaml(activePlan)}>导出 YAML</Button></Space>}
+      >
         <Row gutter={[16, 16]}>
           <Col xs={24} md={8}>
             <Text strong>恢复运行</Text>
             <Paragraph type="secondary" className="compact-copy">从上次输出目录恢复已完成步骤，未变步骤跳过。</Paragraph>
+            <Button onClick={() => void onRun(activePlan)}>完整运行</Button>
           </Col>
           <Col xs={24} md={8}>
             <Text strong>从指定步骤重跑</Text>
             <Paragraph type="secondary" className="compact-copy">选择某个 step，把后续依赖重新排队。</Paragraph>
+            <Select
+              className="full-width"
+              value={rerunStep}
+              onChange={setRerunStep}
+              options={activePlan.steps.map((step) => ({ value: step.id, label: step.id }))}
+            />
+            <Button className="top-gap" onClick={() => void onRun(activePlan, { fromStepId: rerunStep })}>从此步骤重跑</Button>
           </Col>
           <Col xs={24} md={8}>
             <Text strong>带反馈返工</Text>
             <Paragraph type="secondary" className="compact-copy">把上一版产物和修改意见注入目标 Agent，减少从零重写。</Paragraph>
+            <Input.TextArea rows={3} value={feedback} onChange={(event) => setFeedback(event.target.value)} />
+            <Button type="primary" className="top-gap" onClick={() => void onRun(activePlan, { fromStepId: rerunStep, feedback })}>带反馈返工</Button>
           </Col>
         </Row>
       </Card>
@@ -2363,9 +2945,13 @@ function WorkflowsPage({
 function WorkflowDagPreview({
   plan,
   onSave,
+  onRun,
+  onExportYaml,
 }: {
   plan: WorkflowPlan;
   onSave?: (plan: WorkflowPlan) => void | Promise<void>;
+  onRun?: (plan: WorkflowPlan) => void | Promise<void>;
+  onExportYaml?: (plan: WorkflowPlan) => void | Promise<void>;
 }) {
   const levels = buildWorkflowLevels(plan.steps);
   return (
@@ -2375,6 +2961,8 @@ function WorkflowDagPreview({
         <Space wrap>
           <Tag>{plan.provider}</Tag>
           <Tag>并发 {plan.concurrency}</Tag>
+          {onRun ? <Button size="small" type="primary" onClick={() => void onRun(plan)}>运行</Button> : null}
+          {onExportYaml ? <Button size="small" onClick={() => void onExportYaml(plan)}>YAML</Button> : null}
           {onSave ? <Button size="small" onClick={() => void onSave(plan)}>保存</Button> : null}
         </Space>
       }
@@ -2427,15 +3015,39 @@ function buildWorkflowLevels(steps: WorkflowStepRecord[]) {
   return levels;
 }
 
+function affectedWorkflowSteps(steps: WorkflowStepRecord[], fromStepId: string) {
+  const affected = new Set([fromStepId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const step of steps) {
+      if (!affected.has(step.id) && step.dependsOn.some((dep) => affected.has(dep))) {
+        affected.add(step.id);
+        changed = true;
+      }
+    }
+  }
+  return steps.filter((step) => affected.has(step.id)).map((step) => ({
+    ...step,
+    dependsOn: step.dependsOn.filter((dep) => affected.has(dep)),
+  }));
+}
+
 function AssetsPage({
   artifacts,
   onCreate,
+  onOpen,
+  onVersion,
+  onExport,
 }: {
   artifacts: ArtifactRecord[];
   onCreate: () => void | Promise<void>;
+  onOpen: (artifact: ArtifactRecord) => void | Promise<void>;
+  onVersion: (artifact: ArtifactRecord) => void | Promise<void>;
+  onExport: () => void;
 }) {
   return (
-    <Card title="资产库" extra={<Space><Button onClick={() => void onCreate()}>登记产物</Button><Button>批量导出</Button></Space>}>
+    <Card title="资产库" extra={<Space><Button onClick={() => void onCreate()}>登记产物</Button><Button onClick={onExport}>批量导出</Button></Space>}>
       <Table
         rowKey="key"
         pagination={false}
@@ -2445,12 +3057,23 @@ function AssetsPage({
           { title: "来源", dataIndex: "source" },
           { title: "摘要", dataIndex: "summary" },
           { title: "更新时间", dataIndex: "updatedAt" },
+          {
+            title: "操作",
+            width: 180,
+            render: (_, record) => (
+              <Space>
+                <Button size="small" onClick={() => void onOpen(record)}>查看</Button>
+                <Button size="small" onClick={() => void onVersion(record)}>新版本</Button>
+              </Space>
+            ),
+          },
         ]}
         dataSource={artifacts}
         expandable={{
           expandedRowRender: (record) => (
             <Descriptions column={1} size="small">
               <Descriptions.Item label="路径">{record.path}</Descriptions.Item>
+              <Descriptions.Item label="版本">{record.versions?.length ?? "未加载"}</Descriptions.Item>
             </Descriptions>
           ),
         }}
@@ -2459,42 +3082,118 @@ function AssetsPage({
   );
 }
 
-function SettingsPage() {
+function SettingsPage({
+  secrets,
+  onCreateSecret,
+}: {
+  secrets: SecretRecord[];
+  onCreateSecret: (values: SecretFormValues) => void | Promise<void>;
+}) {
+  const [form] = Form.useForm<SecretFormValues>();
   return (
-    <Row gutter={[16, 16]}>
-      <Col xs={24} xl={12}>
-        <Card title="模型与 Runtime">
-          <div className="list-panel">
-            {["Codex CLI", "OpenCode", "GenericAgent Worker"].map((item, index) => (
-              <div className="list-row" key={item}>
-                <div>
-                  <Text strong>{item}</Text>
-                  <Text type="secondary" className="row-meta">{index === 2 ? "127.0.0.1:3917" : "已连接"}</Text>
+    <Space orientation="vertical" size={16} className="full-width">
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={12}>
+          <Card title="模型与 Runtime">
+            <div className="list-panel">
+              {["Codex CLI", "OpenCode", "GenericAgent Worker"].map((item, index) => (
+                <div className="list-row" key={item}>
+                  <div>
+                    <Text strong>{item}</Text>
+                    <Text type="secondary" className="row-meta">{index === 2 ? "127.0.0.1:3917" : "已连接"}</Text>
+                  </div>
+                  <Switch defaultChecked={index < 2} />
                 </div>
-                <Switch defaultChecked={index < 2} />
-              </div>
-            ))}
-          </div>
-        </Card>
-      </Col>
-      <Col xs={24} xl={12}>
-        <Card title="安全策略">
-          <Radio.Group defaultValue="collab" optionType="button" buttonStyle="solid">
-            <Radio value="auto">自动化</Radio>
-            <Radio value="collab">协作</Radio>
-            <Radio value="strict">保守</Radio>
-          </Radio.Group>
-          <div className="list-panel top-gap">
-            {["插件安装：需要确认", "真实账号发布：禁止自动提交", "Secret 注入：仅运行时"].map((item) => (
-              <div className="list-row" key={item}>
-                <Text>{item}</Text>
-                <CheckCircleOutlined className="success-icon" />
-              </div>
-            ))}
-          </div>
-        </Card>
-      </Col>
-    </Row>
+              ))}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} xl={12}>
+          <Card title="安全策略">
+            <Radio.Group defaultValue="collab" optionType="button" buttonStyle="solid">
+              <Radio value="auto">自动化</Radio>
+              <Radio value="collab">协作</Radio>
+              <Radio value="strict">保守</Radio>
+            </Radio.Group>
+            <div className="list-panel top-gap">
+              {["插件安装：需要确认", "真实账号发布：禁止自动提交", "Secret 只登记环境变量引用", "团队权限按 Agent/Team 绑定范围执行"].map((item) => (
+                <div className="list-row" key={item}>
+                  <Text>{item}</Text>
+                  <CheckCircleOutlined className="success-icon" />
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={12}>
+          <Card title="Secret 管理">
+            <Form
+              form={form}
+              layout="vertical"
+              initialValues={{ scope: "runtime", envVar: "OPENAI_API_KEY" }}
+              onFinish={(values) => {
+                void onCreateSecret(values);
+                form.resetFields();
+              }}
+            >
+              <Row gutter={12}>
+                <Col span={10}>
+                  <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入名称" }]}>
+                    <Input placeholder="OpenAI API Key" />
+                  </Form.Item>
+                </Col>
+                <Col span={7}>
+                  <Form.Item label="Scope" name="scope">
+                    <Select options={["runtime", "mcp", "publishing", "team"].map((value) => ({ value, label: value }))} />
+                  </Form.Item>
+                </Col>
+                <Col span={7}>
+                  <Form.Item label="环境变量" name="envVar" rules={[{ required: true, message: "请输入环境变量名" }]}>
+                    <Input />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Button type="primary" onClick={() => form.submit()}>登记 Secret 引用</Button>
+            </Form>
+            <div className="list-panel top-gap">
+              {secrets.map((secret) => (
+                <div className="list-row" key={secret.key}>
+                  <div>
+                    <Text strong>{secret.name}</Text>
+                    <Text type="secondary" className="row-meta">{secret.valuePreview}</Text>
+                  </div>
+                  <Space>
+                    <Tag>{secret.scope}</Tag>
+                    <Tag color={secret.status === "available" ? "success" : "warning"}>{secret.status === "available" ? "可用" : "缺失"}</Tag>
+                  </Space>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} xl={12}>
+          <Card title="团队权限隔离">
+            <Table
+              rowKey="role"
+              pagination={false}
+              columns={[
+                { title: "角色", dataIndex: "role" },
+                { title: "默认权限", dataIndex: "policy" },
+                { title: "审批", dataIndex: "approval", render: (value) => <Tag color={value ? "warning" : "success"}>{value ? "需要" : "自动"}</Tag> },
+              ]}
+              dataSource={[
+                { role: "Owner", policy: "管理 Agent、Team、Secret 和连接器", approval: false },
+                { role: "Operator", policy: "运行任务、处理低风险 CLI、登记 Artifact", approval: false },
+                { role: "Reviewer", policy: "审批中高风险 MCP / CLI / 发布动作", approval: true },
+                { role: "Viewer", policy: "只读任务、知识库和产物", approval: false },
+              ]}
+            />
+          </Card>
+        </Col>
+      </Row>
+    </Space>
   );
 }
 

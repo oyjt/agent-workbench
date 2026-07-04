@@ -35,11 +35,13 @@ node --check scripts/package.mjs
 - Pages 版 `dist/index.html` 资源路径包含 `/agent-workbench/`。
 - Deploy Static Pages workflow 会先检查 Pages site，避免仓库未启用 Pages 时把 CI 跑红。
 
-## 仍属于 P2 的事项
+## 已进入 P2 并完成最小闭环
 
-- 真正的 MCP client 协议调用。
+- MCP stdio 最小协议调用。
 - Artifact 文件内容写入与版本管理。
-- IndexedDB 替代 `localStorage`，承载更大的离线工作区。
+- IndexedDB 离线工作区。
 - Workflow YAML 导入导出。
 - DAG 执行器、从指定 step 重跑、feedback 返工。
-- 用户体系、Secret 管理、团队权限隔离。
+- Secret 引用管理与本地团队权限策略。
+
+详见 [P2 完成清单](p2-status.md)。

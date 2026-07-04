@@ -131,6 +131,17 @@ export type ApiArtifact = {
   updatedAt: string;
 };
 
+export type ApiArtifactVersion = {
+  id: string;
+  artifactId: string;
+  version: number;
+  path: string;
+  summary: string;
+  contentType: string;
+  bytes: number;
+  createdAt: string;
+};
+
 export type ApiWorkflowStep = {
   id: string;
   role: string;
@@ -149,6 +160,17 @@ export type ApiWorkflow = {
   tags: string[];
   steps: ApiWorkflowStep[];
   status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiSecret = {
+  id: string;
+  name: string;
+  scope: string;
+  envVar: string;
+  status: "available" | "missing";
+  valuePreview: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -273,6 +295,14 @@ export async function invokeApiConnector(connectorId: string, taskId: string) {
   });
 }
 
+export async function invokeApiMcpTool(connectorId: string, taskId: string, toolName: string, toolArgs: Record<string, unknown>) {
+  return requestJson<{ ok: boolean; status: string; approval?: ApiApproval; result?: unknown }>(`/api/connectors/${connectorId}/invoke`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ taskId, toolName, toolArgs }),
+  });
+}
+
 export async function listApiApprovals(status?: "pending" | "allowed" | "denied") {
   const query = status ? `?status=${status}` : "";
   return requestJson<{ approvals: ApiApproval[] }>(`/api/approvals${query}`);
@@ -312,8 +342,29 @@ export async function createApiArtifact(payload: {
   source: string;
   path: string;
   manifest: Record<string, unknown>;
+  content?: string;
 }) {
   return requestJson<{ artifact: ApiArtifact }>("/api/artifacts", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getApiArtifactContent(artifactId: string) {
+  return requestJson<{ artifact: ApiArtifact; content: string; versions: ApiArtifactVersion[] }>(`/api/artifacts/${artifactId}/content`);
+}
+
+export async function listApiArtifactVersions(artifactId: string) {
+  return requestJson<{ versions: ApiArtifactVersion[] }>(`/api/artifacts/${artifactId}/versions`);
+}
+
+export async function createApiArtifactVersion(artifactId: string, payload: {
+  content: string;
+  summary: string;
+  contentType?: string;
+}) {
+  return requestJson<{ version: ApiArtifactVersion }>(`/api/artifacts/${artifactId}/versions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -333,6 +384,40 @@ export async function createApiWorkflow(payload: {
   steps: ApiWorkflowStep[];
 }) {
   return requestJson<{ workflow: ApiWorkflow }>("/api/workflows", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function exportApiWorkflowYaml(workflowId: string) {
+  const response = await fetch(`/api/workflows/${workflowId}/yaml`);
+  if (!response.ok) throw new Error(`workflow_yaml_failed_${response.status}`);
+  return response.text();
+}
+
+export async function importApiWorkflowYaml(yaml: string) {
+  return requestJson<{ workflow: ApiWorkflow }>("/api/workflows/import", {
+    method: "POST",
+    headers: { "content-type": "text/yaml" },
+    body: yaml,
+  });
+}
+
+export async function runApiWorkflow(workflowId: string, payload?: { fromStepId?: string; feedback?: string }) {
+  return requestJson<{ ok: boolean; status: string; task: ApiTask; runId: string; artifact?: ApiArtifact }>(`/api/workflows/${workflowId}/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function listApiSecrets() {
+  return requestJson<{ secrets: ApiSecret[] }>("/api/secrets");
+}
+
+export async function createApiSecret(payload: { name: string; scope: string; envVar: string }) {
+  return requestJson<{ secret: ApiSecret }>("/api/secrets", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -367,6 +452,10 @@ export async function appendRunEvent(runId: string, type: string, payload: unkno
   }
 
   return response.json() as Promise<{ event: ApiRunEvent }>;
+}
+
+export async function listApiRunEvents(runId: string) {
+  return requestJson<{ events: ApiRunEvent[] }>(`/api/runs/${runId}/events.json`);
 }
 
 async function requestJson<T>(path: string, init?: RequestInit) {

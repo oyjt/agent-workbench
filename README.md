@@ -2,13 +2,14 @@
 
 Agent Workbench 是一个本地优先的通用 Agent 工作台，用来统一管理自媒体、编码、运营等场景里的任务、Agent、Agent Team、Skills、Workflow Plugins、团队知识库、MCP / CLI 连接器、审批和产物。
 
-项目目标不是再造一个单体 Agent，而是做一个可视化控制台：用户在页面里创建任务、配置团队、绑定工具和知识，后端把任务、运行事件、审批、工作流和产物写入 SQLite，后续可以逐步接入真实 Runtime、MCP client 和发布渠道。
+项目目标不是再造一个单体 Agent，而是做一个可视化控制台：用户在页面里创建任务、配置团队、绑定工具和知识，后端把任务、运行事件、审批、工作流、产物版本和 Secret 引用写入 SQLite，并能在浏览器静态模式下保存离线工作区。
 
 ## 当前状态
 
 - P0 已完成：任务中心、SSE 运行事件、Agent CRUD、Agent Team 串行执行、知识库、MCP / CLI 连接器、审批、Skill 扫描、Workflow Plugin 扫描。
 - P1 已启动并完成第一批闭环：Artifact 持久化、Workflow 持久化、浏览器本地静态模式、生产静态服务、自动打包、GitHub Actions 构建与 smoke test、GitHub Pages 静态部署。
-- 当前实现适合本地迭代和产品验证，Runtime Adapter 与 MCP client 仍是简化版本。
+- P2 已补齐最小可运行闭环：Artifact 文件内容和版本、IndexedDB 离线工作区、Workflow YAML 导入导出、DAG 执行、从指定 step 重跑、feedback 返工、MCP stdio 最小 client、Secret 引用管理和本地团队权限策略。
+- 当前实现适合本地迭代、纯静态 Demo 和单用户本地使用；完整多用户登录、远程队列和生产级模型 Runtime 仍属于后续扩展。
 
 ## 技术栈
 
@@ -28,8 +29,9 @@ Agent Workbench 是一个本地优先的通用 Agent 工作台，用来统一管
 
 - 前端完全静态托管。
 - API 不可用时自动切换到 `Static Local`。
-- 数据保存到浏览器 `localStorage`。
-- 支持任务、Agent、Agent Team、知识库、连接器、审批、Artifact、Workflow 的本地增删与模拟运行。
+- 数据优先保存到浏览器 IndexedDB，并用 `localStorage` 作为兼容兜底。
+- 支持任务、Agent、Agent Team、知识库、连接器、审批、Artifact、Workflow、Secret 引用的本地增删与模拟运行。
+- 支持 Workflow YAML 导入导出、DAG 模拟执行、从 step 重跑、feedback 返工和 Artifact 版本。
 - 支持导出/导入工作区 JSON。
 
 静态模式不能直接执行真实 CLI、访问本机 SQLite、扫描本地目录或运行 MCP stdio server。
@@ -41,7 +43,10 @@ Agent Workbench 是一个本地优先的通用 Agent 工作台，用来统一管
 - Node server 提供 API、SSE 和 `dist` 静态文件。
 - 数据保存到 `.agent-workbench/data/workbench.sqlite`。
 - 支持低风险 CLI 真实执行。
-- 后续真实 MCP client、文件写入、Runtime Adapter 都会优先接入这个模式。
+- 支持 MCP stdio server 的 `initialize`、`tools/list` 和 `tools/call` 最小调用。
+- 支持 Artifact 文件写入 `.agent-workbench/artifacts` 并记录版本。
+- 支持 Workflow YAML 导入导出、DAG 执行、从指定 step 重跑和 feedback 返工。
+- 支持 Secret 环境变量引用登记，不保存真实密钥明文。
 
 ## 核心功能
 
@@ -74,6 +79,7 @@ Agent Workbench 是一个本地优先的通用 Agent 工作台，用来统一管
 
 - 注册 MCP Server 或 CLI Command。
 - 支持自检和试运行。
+- MCP stdio 支持最小 JSON-RPC client，可执行 `tools/list`，传入 tool 名称时可执行 `tools/call`。
 - 低风险 CLI 可真实执行。
 - 中高风险 MCP / CLI 调用会进入审批队列，不会直接执行。
 
@@ -90,13 +96,23 @@ Agent Workbench 是一个本地优先的通用 Agent 工作台，用来统一管
 - 内置工作流模板。
 - 保存工作流到 SQLite。
 - 已保存工作流可重新打开。
+- 支持导入/导出 Workflow YAML。
+- 支持完整运行、从指定 step 重跑和带 feedback 返工。
+- 每次运行会生成 Workflow Artifact 并写入运行事件。
 
 ### Artifact Studio / 资产库
 
 - Runtime 会登记 Codex diff 或内容草稿 artifact。
 - 资产库从 SQLite 读取 artifacts。
 - 支持手动登记交付物。
-- 当前保存的是 artifact manifest，文件内容写入和版本管理属于后续 P2。
+- Artifact 内容会写入 `.agent-workbench/artifacts`。
+- 支持查看内容、下载、登记新版本和批量导出 manifest。
+
+### Secret 与权限
+
+- Secret 管理只登记环境变量引用，例如 `OPENAI_API_KEY`，不在仓库或 SQLite 保存真实密钥明文。
+- 设置页提供本地角色权限矩阵：Owner、Operator、Reviewer、Viewer。
+- 中高风险连接器仍走统一审批队列。
 
 ## 项目结构
 
@@ -332,31 +348,21 @@ pnpm package      # 构建并打包 release tgz
 - [Workbench API 与 SQLite 说明](docs/backend-api.md)
 - [P0 完成清单](docs/p0-status.md)
 - [P1 完成清单](docs/p1-status.md)
+- [P2 完成清单](docs/p2-status.md)
 
 ## 安全边界
 
 - 低风险 CLI 会真实执行，请只注册可信命令。
 - 中高风险连接器会进入审批队列。
-- 当前没有用户体系和多租户权限隔离。
-- 当前没有 Secret 管理，不要把真实密钥写入仓库或 SQLite。
-- MCP 调用仍是模拟 health-call，真实 MCP client 属于后续阶段。
-- Static Local Mode 的数据只存在当前浏览器，换浏览器或清缓存前请先导出工作区 JSON。
+- 当前是本地单用户工作台，不提供远程登录、多租户和服务端会话。
+- Secret 管理登记的是环境变量名，不保存真实密钥值。
+- MCP stdio 已支持最小协议调用；HTTP MCP endpoint 当前只登记和标记。
+- Static Local Mode 的数据存在当前浏览器 IndexedDB，换浏览器或清缓存前请先导出工作区 JSON。
 
 ## 后续路线
 
-### P1 后续
-
-- Artifact 文件内容写入 `.agent-workbench/artifacts` 并做版本管理。
-- IndexedDB 替代 `localStorage`，承载更大的离线数据。
-- Workflow YAML 导入导出。
-- 从指定 step 重跑与 feedback 返工。
-- 更细的 connector allowlist。
-
-### P2
-
-- 真实 MCP client。
-- Runtime Adapter 插件化。
-- Secret 管理。
-- 用户与团队权限。
-- Artifact 检索、引用和导出。
+- Runtime Adapter 插件化，接入真实 Codex / OpenCode / 浏览器自动化执行器。
+- 更细粒度 connector allowlist、并发限制和审计查询。
+- Artifact 全文检索、引用图谱和多格式导出。
+- 远程多用户登录、团队空间和权限后端。
 - GitHub Release 自动发布。

@@ -38,7 +38,9 @@ pnpm db:init
 - `connectors`
 - `approvals`
 - `artifacts`
+- `artifact_versions`
 - `workflows`
+- `secrets`
 
 ## 核心端点
 
@@ -99,6 +101,15 @@ Agent Team 当前使用串行执行模型：`startTask` 会按 `agent_team_membe
 
 低风险 CLI 会通过 `spawnSync` 在项目根目录执行命令，并把 stdout / stderr 摘要写入事件。中高风险 MCP / CLI 调用不会直接执行，而是创建 `approval` 记录并返回 `approval_required`。
 
+MCP stdio 连接器支持最小 JSON-RPC client：
+
+- `initialize`
+- `notifications/initialized`
+- `tools/list`
+- `tools/call`
+
+未传 `toolName` 时，试运行默认执行 `tools/list`；传入 `toolName` 与 `toolArgs` 时执行 `tools/call`。HTTP MCP endpoint 当前只登记和标记，不直接发起远程调用。
+
 ### Approvals
 
 - `GET /api/approvals`
@@ -122,15 +133,37 @@ Agent Team 当前使用串行执行模型：`startTask` 会按 `agent_team_membe
 
 - `GET /api/artifacts`
 - `POST /api/artifacts`
+- `GET /api/artifacts/:artifactId/content`
+- `GET /api/artifacts/:artifactId/versions`
+- `POST /api/artifacts/:artifactId/versions`
 
-任务启动后会把 Codex diff 或内容草稿登记为 Artifact，前端资产库也可以手动登记交付物。
+任务启动后会把 Codex diff 或内容草稿登记为 Artifact。带 `content` 字段创建 Artifact 时，后端会把内容写入 `.agent-workbench/artifacts`，并创建 `artifact_versions` 首版记录。后续版本通过 `POST /api/artifacts/:artifactId/versions` 追加。
 
 ### Workflows
 
 - `GET /api/workflows`
 - `POST /api/workflows`
+- `GET /api/workflows/:workflowId/yaml`
+- `POST /api/workflows/import`
+- `POST /api/workflows/:workflowId/run`
 
-工作流保存 `name`、`description`、`provider`、`concurrency`、`tags` 和 `steps`，用于把前端 DAG 草案持久化。
+工作流保存 `name`、`description`、`provider`、`concurrency`、`tags` 和 `steps`，用于把前端 DAG 草案持久化。YAML 端点使用 Agent Workbench 自有的简单 YAML 格式，适合导入导出和版本管理。
+
+运行工作流时支持：
+
+- 完整 DAG 执行
+- `fromStepId` 指定步骤重跑
+- `feedback` 返工说明注入
+
+每次运行会创建一个 workflow task、run events 和 workflow artifact。
+
+### Secrets
+
+- `GET /api/secrets`
+- `POST /api/secrets`
+- `DELETE /api/secrets/:secretId`
+
+Secret 管理只保存环境变量引用，例如 `OPENAI_API_KEY`，返回 `available` / `missing` 状态和脱敏预览，不保存真实密钥明文。
 
 ## 生产静态服务
 
@@ -144,8 +177,9 @@ http://127.0.0.1:8787
 
 ## 当前边界
 
-- Runtime Adapter 是简化实现：用于验证任务状态、事件、审批和串行团队执行闭环，还不是完整模型执行器。
-- MCP 调用当前是模拟 health-call；CLI 低风险命令可真实执行。
-- Artifact 已落库，但 artifact 文件内容仍未写入对象存储或版本目录。
-- Workflow 已落库，但从指定步骤重跑、导入导出和 DAG 执行器仍待实现。
+- Runtime Adapter 是简化实现：用于验证任务状态、事件、审批、Artifact 和 Workflow 闭环，还不是完整模型执行器。
+- MCP stdio 已支持最小协议调用；HTTP MCP endpoint 当前只登记，不执行远程调用。
+- Artifact 已落库并写入本地版本目录，尚未实现全文检索、引用图谱和外部对象存储。
+- Workflow 已支持 YAML、DAG 执行、指定 step 重跑和 feedback 返工；尚未实现真实并发调度和长任务队列。
+- 当前是本地单用户工作台，Secret 以环境变量引用方式管理，不提供远程登录和多租户会话。
 - `node:sqlite` 在当前 Node 版本仍属于实验能力，脚本里已隐藏 ExperimentalWarning。
