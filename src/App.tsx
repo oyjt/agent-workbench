@@ -145,7 +145,7 @@ export default function App() {
       title: "任务",
       dataIndex: "title",
       render: (_, record) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Text strong>{record.title}</Text>
           <Text type="secondary">{record.description}</Text>
         </Space>
@@ -227,13 +227,13 @@ export default function App() {
     switch (page) {
       case "overview":
         return (
-          <Space direction="vertical" size={16} className="full-width">
+          <Space orientation="vertical" size={16} className="full-width">
             <Row gutter={[16, 16]}>
               <Col xs={24} sm={12} lg={5}><Card><Statistic title="运行中任务" value={6} suffix="个" /></Card></Col>
               <Col xs={24} sm={12} lg={5}><Card><Statistic title="今日产物" value={24} suffix="个" /></Card></Col>
               <Col xs={24} sm={12} lg={5}><Card><Statistic title="知识引用" value={38} suffix="次" /></Card></Col>
               <Col xs={24} sm={12} lg={5}><Card><Statistic title="插件运行" value={9} suffix="次" /></Card></Col>
-              <Col xs={24} sm={12} lg={4}><Card><Statistic title="风险动作" value={4} valueStyle={{ color: "#faad14" }} /></Card></Col>
+              <Col xs={24} sm={12} lg={4}><Card><Statistic title="风险动作" value={4} styles={{ content: { color: "#faad14" } }} /></Card></Col>
             </Row>
 
             <Row gutter={[16, 16]}>
@@ -255,13 +255,13 @@ export default function App() {
               <Col xs={24} xl={9}>
                 <Card title={selectedTask.title} extra={statusTag(selectedTask.status)}>
                   <Steps
-                    direction="vertical"
+                    orientation="vertical"
                     current={2}
                     items={[
-                      { title: "Discovery", description: "热榜、竞品和历史素材已整理" },
-                      { title: "Generate", description: "正文草稿、标题和封面 brief 已生成" },
-                      { title: "Approval", description: "准备写入公众号草稿箱" },
-                      { title: "Handoff", description: "导出发布包和复盘卡片" },
+                      { title: "Discovery", content: "热榜、竞品和历史素材已整理" },
+                      { title: "Generate", content: "正文草稿、标题和封面 brief 已生成" },
+                      { title: "Approval", content: "准备写入公众号草稿箱" },
+                      { title: "Handoff", content: "导出发布包和复盘卡片" },
                     ]}
                   />
                   <Card size="small" className="approval-card">
@@ -628,7 +628,7 @@ function SettingsPage() {
 
 function ApprovalDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Drawer title="审批请求" open={open} onClose={onClose} width={480}>
+    <Drawer title="审批请求" open={open} onClose={onClose} size={480}>
       <Card className="approval-card">
         <Tag color="warning">中风险</Tag>
         <Title level={4}>发布 Agent 请求浏览器输入</Title>
@@ -653,7 +653,7 @@ function PluginModal({ open, onCancel, onOk }: { open: boolean; onCancel: () => 
   return (
     <Modal title="启动插件：自媒体周更" open={open} onCancel={onCancel} onOk={onOk} okText="授权并启动" cancelText="取消">
       <Paragraph type="secondary">确认本次运行将使用的能力。</Paragraph>
-      <Space direction="vertical">
+      <Space orientation="vertical">
         <Switch defaultChecked /> <Text>`network:read` 读取热榜与竞品页面</Text>
         <Switch defaultChecked /> <Text>`knowledge:read` 检索 BRAND.md / CONTENT.md / SOP</Text>
         <Switch defaultChecked /> <Text>`files:write` 写入 artifact project</Text>
