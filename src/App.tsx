@@ -20,17 +20,18 @@ import {
   Col,
   Descriptions,
   Drawer,
+  Empty,
   Flex,
   Form,
   Input,
   Layout,
-  List,
   Menu,
   Modal,
   Progress,
   Radio,
   Row,
   Segmented,
+  Select,
   Space,
   Statistic,
   Steps,
@@ -59,7 +60,9 @@ type PageKey =
   | "assets"
   | "settings";
 
-type TaskStatus = "approval" | "running" | "done" | "failed";
+type TaskStatus = "queued" | "approval" | "running" | "paused" | "done" | "failed" | "cancelled";
+type RiskLevel = "low" | "medium" | "high";
+type ConnectorKind = "MCP" | "CLI";
 
 type Task = {
   key: string;
@@ -68,6 +71,87 @@ type Task = {
   owner: string;
   runtime: string;
   status: TaskStatus;
+  target: string;
+  updatedAt: string;
+};
+
+type AgentRecord = {
+  key: string;
+  name: string;
+  description: string;
+  runtime: string;
+  model: string;
+  capability: string;
+  knowledgeScope: string;
+  permissionProfile: string;
+  status: "启用" | "运行中" | "禁用";
+};
+
+type KnowledgeItem = {
+  key: string;
+  title: string;
+  type: "SOP" | "品牌" | "平台规则" | "决策" | "代码文档";
+  meta: string;
+  status: "已审核" | "契约" | "将过期" | "草稿";
+  tags: string[];
+  visibility: "team" | "project";
+};
+
+type ConnectorRecord = {
+  key: string;
+  kind: ConnectorKind;
+  name: string;
+  description: string;
+  status: "在线" | "CLI" | "待检查" | "禁用";
+  risk: RiskLevel;
+  binding: string;
+};
+
+type ApprovalRecord = {
+  key: string;
+  taskKey: string;
+  title: string;
+  source: string;
+  risk: RiskLevel;
+  capabilities: string[];
+  status: "pending" | "allowed" | "denied";
+  reason: string;
+};
+
+type TaskFormValues = {
+  title: string;
+  prompt: string;
+  targetType: "agent" | "agent_team" | "plugin";
+  targetId: string;
+  priority: "normal" | "high";
+  requiresApproval: boolean;
+};
+
+type AgentFormValues = {
+  name: string;
+  description: string;
+  runtime: string;
+  model: string;
+  permissionProfile: string;
+  systemPrompt: string;
+  skillIds: string[];
+  knowledgeScope: string;
+};
+
+type KnowledgeFormValues = {
+  title: string;
+  type: KnowledgeItem["type"];
+  content: string;
+  tags: string[];
+  visibility: KnowledgeItem["visibility"];
+};
+
+type ConnectorFormValues = {
+  name: string;
+  description: string;
+  command: string;
+  risk: RiskLevel;
+  binding: string;
 };
 
 const pageMeta: Record<PageKey, { title: string; subtitle: string }> = {
@@ -82,7 +166,23 @@ const pageMeta: Record<PageKey, { title: string; subtitle: string }> = {
   settings: { title: "设置", subtitle: "Runtime、Provider、Secret 和安全策略" },
 };
 
-const tasks: Task[] = [
+const taskStatusMeta: Record<TaskStatus, { label: string; color: string; progress: number }> = {
+  queued: { label: "排队中", color: "default", progress: 12 },
+  approval: { label: "待审批", color: "warning", progress: 62 },
+  running: { label: "运行中", color: "processing", progress: 48 },
+  paused: { label: "已暂停", color: "default", progress: 42 },
+  done: { label: "已完成", color: "success", progress: 100 },
+  failed: { label: "需处理", color: "error", progress: 34 },
+  cancelled: { label: "已取消", color: "default", progress: 0 },
+};
+
+const riskMeta: Record<RiskLevel, { label: string; color: string }> = {
+  low: { label: "低风险", color: "success" },
+  medium: { label: "中风险", color: "warning" },
+  high: { label: "高风险", color: "error" },
+};
+
+const initialTasks: Task[] = [
   {
     key: "media",
     title: "公众号周更：AI Agent 工作流",
@@ -90,6 +190,8 @@ const tasks: Task[] = [
     owner: "内容团队",
     runtime: "BrowserOps",
     status: "approval",
+    target: "自媒体周更插件",
+    updatedAt: "刚刚",
   },
   {
     key: "coding",
@@ -98,6 +200,8 @@ const tasks: Task[] = [
     owner: "开发工程师",
     runtime: "Codex",
     status: "running",
+    target: "代码需求实现插件",
+    updatedAt: "8 分钟前",
   },
   {
     key: "creative",
@@ -106,6 +210,8 @@ const tasks: Task[] = [
     owner: "Creative Studio",
     runtime: "OpenCode",
     status: "done",
+    target: "产品上线宣传包",
+    updatedAt: "24 分钟前",
   },
   {
     key: "ops",
@@ -114,31 +220,178 @@ const tasks: Task[] = [
     owner: "运营 Agent",
     runtime: "BrowserOps",
     status: "failed",
+    target: "运营日报流程",
+    updatedAt: "1 小时前",
+  },
+];
+
+const initialAgents: AgentRecord[] = [
+  {
+    key: "agent_topic",
+    name: "内容选题 Agent",
+    description: "负责热榜、竞品、资料收集和选题评分",
+    runtime: "BrowserOps",
+    model: "gpt-5.5",
+    capability: "4 Skills · 2 MCP",
+    knowledgeScope: "内容 SOP / 平台规则 / 竞品资料",
+    permissionProfile: "collaborative",
+    status: "启用",
+  },
+  {
+    key: "agent_coder",
+    name: "开发工程师",
+    description: "负责需求实现、测试、diff 汇总和变更说明",
+    runtime: "Codex",
+    model: "gpt-5.4",
+    capability: "3 Skills · 3 CLI",
+    knowledgeScope: "代码文档 / 架构决策",
+    permissionProfile: "collaborative",
+    status: "运行中",
+  },
+  {
+    key: "agent_creative",
+    name: "设计素材 Agent",
+    description: "生成封面 brief、素材清单和品牌一致性检查",
+    runtime: "OpenCode",
+    model: "gpt-5.4",
+    capability: "2 Plugins",
+    knowledgeScope: "BRAND.md / CONTENT.md",
+    permissionProfile: "strict",
+    status: "启用",
+  },
+];
+
+const initialKnowledgeItems: KnowledgeItem[] = [
+  {
+    key: "kb_sop",
+    title: "公众号发布前审核 SOP",
+    type: "SOP",
+    meta: "今天 09:42 · 引用 12 次",
+    status: "已审核",
+    tags: ["公众号", "审核", "发布"],
+    visibility: "team",
+  },
+  {
+    key: "kb_brand",
+    title: "BRAND.md：品牌语气与视觉规范",
+    type: "品牌",
+    meta: "全团队 · 当前版本",
+    status: "契约",
+    tags: ["品牌", "语气", "视觉"],
+    visibility: "team",
+  },
+  {
+    key: "kb_xhs",
+    title: "小红书标签与标题规则",
+    type: "平台规则",
+    meta: "下周复核 · 引用 6 次",
+    status: "将过期",
+    tags: ["小红书", "标题", "标签"],
+    visibility: "project",
+  },
+];
+
+const initialConnectors: ConnectorRecord[] = [
+  {
+    key: "mcp_github",
+    kind: "MCP",
+    name: "GitHub MCP",
+    description: "stdio · 12 tools · 绑定开发工程师",
+    status: "在线",
+    risk: "medium",
+    binding: "开发工程师",
+  },
+  {
+    key: "mcp_filesystem",
+    kind: "MCP",
+    name: "Filesystem MCP",
+    description: "工作区只读默认 · 写入需审批",
+    status: "在线",
+    risk: "medium",
+    binding: "内容团队",
+  },
+  {
+    key: "cli_build",
+    kind: "CLI",
+    name: "pnpm build",
+    description: "command template · timeout 120s",
+    status: "CLI",
+    risk: "low",
+    binding: "开发工程师",
+  },
+  {
+    key: "cli_ffmpeg",
+    kind: "CLI",
+    name: "ffmpeg render",
+    description: "视频 worker 渲染和转码",
+    status: "待检查",
+    risk: "high",
+    binding: "Creative Studio",
+  },
+];
+
+const initialApprovals: ApprovalRecord[] = [
+  {
+    key: "approval_browser_input",
+    taskKey: "media",
+    title: "发布 Agent 请求浏览器输入",
+    source: "发布 Agent / 自媒体周更",
+    risk: "medium",
+    capabilities: ["browser:input", "files:read"],
+    status: "pending",
+    reason: "目标：微信公众平台草稿箱。动作：填入标题、正文和封面，不提交发布。",
   },
 ];
 
 function statusTag(status: TaskStatus) {
-  const map = {
-    approval: <Tag color="warning">待审批</Tag>,
-    running: <Tag color="processing">运行中</Tag>,
-    done: <Tag color="success">已完成</Tag>,
-    failed: <Tag color="error">需处理</Tag>,
-  };
-  return map[status];
+  const meta = taskStatusMeta[status];
+  return <Tag color={meta.color}>{meta.label}</Tag>;
+}
+
+function riskTag(risk: RiskLevel, key?: string) {
+  const meta = riskMeta[risk];
+  return <Tag key={key} color={meta.color}>{meta.label}</Tag>;
+}
+
+function nowLabel() {
+  return "刚刚";
 }
 
 export default function App() {
+  const [messageApi, contextHolder] = message.useMessage();
   const [page, setPage] = useState<PageKey>("overview");
-  const [selectedTask, setSelectedTask] = useState<Task>(tasks[0]);
+  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [selectedTask, setSelectedTask] = useState<Task>(initialTasks[0]);
+  const [agents, setAgents] = useState<AgentRecord[]>(initialAgents);
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>(initialKnowledgeItems);
+  const [connectors, setConnectors] = useState<ConnectorRecord[]>(initialConnectors);
+  const [approvals, setApprovals] = useState<ApprovalRecord[]>(initialApprovals);
   const [taskFilter, setTaskFilter] = useState<string>("全部");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [pluginOpen, setPluginOpen] = useState(false);
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
+  const [knowledgeDrawerOpen, setKnowledgeDrawerOpen] = useState(false);
+  const [connectorDrawer, setConnectorDrawer] = useState<{ open: boolean; kind: ConnectorKind }>({
+    open: false,
+    kind: "MCP",
+  });
 
   const filteredTasks = useMemo(() => {
     if (taskFilter === "全部") return tasks;
     if (taskFilter === "审批") return tasks.filter((task) => task.status === "approval");
+    if (taskFilter === "运行") return tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
     return tasks.filter((task) => task.status === "failed");
-  }, [taskFilter]);
+  }, [taskFilter, tasks]);
+
+  const runtimePool = useMemo(
+    () =>
+      ["Codex", "OpenCode", "BrowserOps", "Creative"].map((runtime) => ({
+        runtime,
+        count: tasks.filter((task) => task.runtime === runtime && ["queued", "approval", "running"].includes(task.status)).length,
+      })),
+    [tasks],
+  );
 
   const taskColumns: ColumnsType<Task> = [
     {
@@ -168,59 +421,236 @@ export default function App() {
     { key: "settings", icon: <SettingOutlined />, label: "设置" },
   ];
 
+  function createTask(values: TaskFormValues) {
+    const agent = agents.find((item) => item.key === values.targetId);
+    const target = values.targetType === "plugin" ? values.targetId : agent?.name ?? "自媒体内容团队";
+    const runtime = values.targetType === "plugin" ? "BrowserOps" : agent?.runtime ?? "BrowserOps";
+    const newTask: Task = {
+      key: `task_${Date.now()}`,
+      title: values.title,
+      description: values.prompt,
+      owner: values.targetType === "agent" ? target : "内容团队",
+      runtime,
+      status: values.requiresApproval ? "approval" : "queued",
+      target,
+      updatedAt: nowLabel(),
+    };
+
+    setTasks((current) => [newTask, ...current]);
+    setSelectedTask(newTask);
+    setTaskModalOpen(false);
+    setPage("overview");
+
+    if (values.requiresApproval) {
+      setApprovals((current) => [
+        {
+          key: `approval_${Date.now()}`,
+          taskKey: newTask.key,
+          title: "新任务请求高风险能力确认",
+          source: `${target} / ${values.targetType}`,
+          risk: values.priority === "high" ? "high" : "medium",
+          capabilities: ["network:read", "files:write"],
+          status: "pending",
+          reason: "任务创建时选择了审批模式，启动前需要确认能力授权。",
+        },
+        ...current,
+      ]);
+    }
+
+    messageApi.success("任务草稿已创建，并加入工作台队列");
+  }
+
+  function createAgent(values: AgentFormValues) {
+    const agent: AgentRecord = {
+      key: `agent_${Date.now()}`,
+      name: values.name,
+      description: values.description,
+      runtime: values.runtime,
+      model: values.model,
+      capability: `${values.skillIds.length} Skills · 0 MCP`,
+      knowledgeScope: values.knowledgeScope,
+      permissionProfile: values.permissionProfile,
+      status: "启用",
+    };
+
+    setAgents((current) => [agent, ...current]);
+    setAgentDrawerOpen(false);
+    setPage("agents");
+    messageApi.success("Agent 已创建，可继续绑定 MCP / CLI 能力");
+  }
+
+  function createKnowledgeItem(values: KnowledgeFormValues) {
+    const item: KnowledgeItem = {
+      key: `knowledge_${Date.now()}`,
+      title: values.title,
+      type: values.type,
+      meta: `${values.visibility === "team" ? "团队" : "项目"} · 草稿 · 引用 0 次`,
+      status: "草稿",
+      tags: values.tags,
+      visibility: values.visibility,
+    };
+
+    setKnowledgeItems((current) => [item, ...current]);
+    setKnowledgeDrawerOpen(false);
+    setPage("knowledge");
+    messageApi.success("知识条目已保存为草稿，审核后可进入 Agent 检索范围");
+  }
+
+  function createConnector(kind: ConnectorKind, values: ConnectorFormValues) {
+    const connector: ConnectorRecord = {
+      key: `${kind.toLowerCase()}_${Date.now()}`,
+      kind,
+      name: values.name,
+      description: kind === "MCP" ? `${values.command} · 待自检` : `${values.command} · command template`,
+      status: "待检查",
+      risk: values.risk,
+      binding: values.binding,
+    };
+
+    setConnectors((current) => [connector, ...current]);
+    setConnectorDrawer({ open: false, kind });
+    setPage("connectors");
+    messageApi.success(`${kind} 连接器已注册，下一步可运行健康检查`);
+  }
+
+  function updateTaskStatus(taskKey: string, status: TaskStatus) {
+    setTasks((current) =>
+      current.map((task) => (task.key === taskKey ? { ...task, status, updatedAt: nowLabel() } : task)),
+    );
+    setSelectedTask((current) => (current.key === taskKey ? { ...current, status, updatedAt: nowLabel() } : current));
+    messageApi.info(`任务状态已更新为：${taskStatusMeta[status].label}`);
+  }
+
+  function respondApproval(approvalKey: string, decision: ApprovalRecord["status"]) {
+    const approval = approvals.find((item) => item.key === approvalKey);
+    setApprovals((current) => current.map((item) => (item.key === approvalKey ? { ...item, status: decision } : item)));
+
+    if (approval?.taskKey && decision === "allowed") {
+      updateTaskStatus(approval.taskKey, "running");
+    }
+
+    if (decision === "denied" && approval?.taskKey) {
+      updateTaskStatus(approval.taskKey, "paused");
+    }
+
+    messageApi.success(decision === "allowed" ? "已允许本次能力调用" : "已拒绝本次能力调用");
+  }
+
+  function startPluginRun() {
+    const task: Task = {
+      key: `plugin_task_${Date.now()}`,
+      title: "自媒体周更：AI Agent 工作流",
+      description: "由 Workflow Plugin 生成：热榜采集、正文、封面 brief、发布包",
+      owner: "内容团队",
+      runtime: "BrowserOps",
+      status: "approval",
+      target: "自媒体周更插件",
+      updatedAt: nowLabel(),
+    };
+
+    setTasks((current) => [task, ...current]);
+    setApprovals((current) => [
+      {
+        key: `approval_plugin_${Date.now()}`,
+        taskKey: task.key,
+        title: "Plugin capability gate",
+        source: "自媒体周更 / Workflow Plugin",
+        risk: "medium",
+        capabilities: ["network:read", "knowledge:read", "files:write", "browser:input"],
+        status: "pending",
+        reason: "插件启动前需要确认网络读取、知识检索、文件写入和浏览器输入权限。",
+      },
+      ...current,
+    ]);
+    setSelectedTask(task);
+    setPluginOpen(false);
+    setPage("overview");
+    messageApi.success("插件运行草稿已创建，等待 capability gate 审批");
+  }
+
   return (
-    <Layout className="app-shell">
-      <Sider width={256} breakpoint="lg" collapsedWidth={0} className="app-sider">
-        <div className="brand">
-          <div className="brand-mark">A</div>
-          <div>
-            <Text strong className="brand-title">Agent Workbench</Text>
-            <Text className="brand-subtitle">Local Agent Console</Text>
+    <>
+      {contextHolder}
+      <Layout className="app-shell">
+        <Sider width={256} breakpoint="lg" collapsedWidth={0} className="app-sider">
+          <div className="brand">
+            <div className="brand-mark">A</div>
+            <div>
+              <Text strong className="brand-title">Agent Workbench</Text>
+              <Text className="brand-subtitle">Local Agent Console</Text>
+            </div>
           </div>
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[page]}
-          items={menuItems}
-          onClick={({ key }) => setPage(key as PageKey)}
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={[page]}
+            items={menuItems}
+            onClick={({ key }) => setPage(key as PageKey)}
+          />
+          <Card className="runtime-card" size="small">
+            <Text type="secondary">Runtime Pool</Text>
+            <Flex vertical gap={8} className="runtime-list">
+              {runtimePool.map((runtime) => (
+                <Flex justify="space-between" key={runtime.runtime}>
+                  <span>{runtime.runtime}</span>
+                  <Badge status={runtime.count > 0 ? "success" : "default"} text={runtime.count} />
+                </Flex>
+              ))}
+            </Flex>
+          </Card>
+        </Sider>
+
+        <Layout>
+          <Header className="app-header">
+            <div>
+              <Title level={3}>{pageMeta[page].title}</Title>
+              <Text type="secondary">{pageMeta[page].subtitle}</Text>
+            </div>
+            <Space wrap>
+              <Input.Search placeholder="搜索任务、Agent、插件、知识" className="global-search" />
+              <Button onClick={() => setApprovalOpen(true)}>审批队列</Button>
+              <Button type="primary" onClick={() => setTaskModalOpen(true)}>新建任务</Button>
+            </Space>
+          </Header>
+          <Content className="app-content">{renderPage()}</Content>
+        </Layout>
+
+        <ApprovalDrawer
+          open={approvalOpen}
+          approvals={approvals}
+          onClose={() => setApprovalOpen(false)}
+          onRespond={respondApproval}
         />
-        <Card className="runtime-card" size="small">
-          <Text type="secondary">Runtime Pool</Text>
-          <Flex vertical gap={8} className="runtime-list">
-            <Flex justify="space-between"><span>Codex</span><Badge status="success" text="2" /></Flex>
-            <Flex justify="space-between"><span>OpenCode</span><Badge status="success" text="1" /></Flex>
-            <Flex justify="space-between"><span>BrowserOps</span><Badge status="warning" text="1" /></Flex>
-            <Flex justify="space-between"><span>Creative</span><Badge status="default" text="0" /></Flex>
-          </Flex>
-        </Card>
-      </Sider>
-
-      <Layout>
-        <Header className="app-header">
-          <div>
-            <Title level={3}>{pageMeta[page].title}</Title>
-            <Text type="secondary">{pageMeta[page].subtitle}</Text>
-          </div>
-          <Space wrap>
-            <Input.Search placeholder="搜索任务、Agent、插件、知识" className="global-search" />
-            <Button onClick={() => setApprovalOpen(true)}>审批队列</Button>
-            <Button type="primary">新建任务</Button>
-          </Space>
-        </Header>
-        <Content className="app-content">{renderPage()}</Content>
+        <PluginModal
+          open={pluginOpen}
+          onCancel={() => setPluginOpen(false)}
+          onOk={startPluginRun}
+        />
+        <TaskModal
+          open={taskModalOpen}
+          agents={agents}
+          onCancel={() => setTaskModalOpen(false)}
+          onCreate={createTask}
+        />
+        <AgentDrawer
+          open={agentDrawerOpen}
+          onClose={() => setAgentDrawerOpen(false)}
+          onCreate={createAgent}
+        />
+        <KnowledgeDrawer
+          open={knowledgeDrawerOpen}
+          onClose={() => setKnowledgeDrawerOpen(false)}
+          onCreate={createKnowledgeItem}
+        />
+        <ConnectorDrawer
+          open={connectorDrawer.open}
+          kind={connectorDrawer.kind}
+          agents={agents}
+          onClose={() => setConnectorDrawer((current) => ({ ...current, open: false }))}
+          onCreate={createConnector}
+        />
       </Layout>
-
-      <ApprovalDrawer open={approvalOpen} onClose={() => setApprovalOpen(false)} />
-      <PluginModal
-        open={pluginOpen}
-        onCancel={() => setPluginOpen(false)}
-        onOk={() => {
-          setPluginOpen(false);
-          message.success("已记录本次授权，插件运行已加入任务队列");
-        }}
-      />
-    </Layout>
+    </>
   );
 
   function renderPage() {
@@ -229,18 +659,28 @@ export default function App() {
         return (
           <Space orientation="vertical" size={16} className="full-width">
             <Row gutter={[16, 16]}>
-              <Col xs={24} sm={12} lg={5}><Card><Statistic title="运行中任务" value={6} suffix="个" /></Card></Col>
-              <Col xs={24} sm={12} lg={5}><Card><Statistic title="今日产物" value={24} suffix="个" /></Card></Col>
-              <Col xs={24} sm={12} lg={5}><Card><Statistic title="知识引用" value={38} suffix="次" /></Card></Col>
-              <Col xs={24} sm={12} lg={5}><Card><Statistic title="插件运行" value={9} suffix="次" /></Card></Col>
-              <Col xs={24} sm={12} lg={4}><Card><Statistic title="风险动作" value={4} styles={{ content: { color: "#faad14" } }} /></Card></Col>
+              <Col xs={24} sm={12} lg={5}>
+                <Card><Statistic title="运行中任务" value={tasks.filter((task) => ["queued", "approval", "running"].includes(task.status)).length} suffix="个" /></Card>
+              </Col>
+              <Col xs={24} sm={12} lg={5}>
+                <Card><Statistic title="今日产物" value={24} suffix="个" /></Card>
+              </Col>
+              <Col xs={24} sm={12} lg={5}>
+                <Card><Statistic title="知识条目" value={knowledgeItems.length} suffix="条" /></Card>
+              </Col>
+              <Col xs={24} sm={12} lg={5}>
+                <Card><Statistic title="连接器" value={connectors.length} suffix="个" /></Card>
+              </Col>
+              <Col xs={24} sm={12} lg={4}>
+                <Card><Statistic title="待审批" value={approvals.filter((item) => item.status === "pending").length} styles={{ content: { color: "#faad14" } }} /></Card>
+              </Col>
             </Row>
 
             <Row gutter={[16, 16]}>
               <Col xs={24} xl={15}>
                 <Card
                   title="任务队列"
-                  extra={<Segmented options={["全部", "审批", "异常"]} value={taskFilter} onChange={(value) => setTaskFilter(String(value))} />}
+                  extra={<Segmented options={["全部", "运行", "审批", "异常"]} value={taskFilter} onChange={(value) => setTaskFilter(String(value))} />}
                 >
                   <Table
                     rowKey="key"
@@ -254,25 +694,51 @@ export default function App() {
               </Col>
               <Col xs={24} xl={9}>
                 <Card title={selectedTask.title} extra={statusTag(selectedTask.status)}>
+                  <Descriptions column={1} size="small">
+                    <Descriptions.Item label="目标">{selectedTask.target}</Descriptions.Item>
+                    <Descriptions.Item label="Runtime">{selectedTask.runtime}</Descriptions.Item>
+                    <Descriptions.Item label="最近更新">{selectedTask.updatedAt}</Descriptions.Item>
+                  </Descriptions>
+                  <Progress percent={taskStatusMeta[selectedTask.status].progress} className="top-gap" />
                   <Steps
                     orientation="vertical"
-                    current={2}
+                    current={stepIndexForTask(selectedTask.status)}
                     items={[
-                      { title: "Discovery", content: "热榜、竞品和历史素材已整理" },
-                      { title: "Generate", content: "正文草稿、标题和封面 brief 已生成" },
-                      { title: "Approval", content: "准备写入公众号草稿箱" },
-                      { title: "Handoff", content: "导出发布包和复盘卡片" },
+                      { title: "Create", content: "任务创建并写入 run draft" },
+                      { title: "Context", content: "注入 Agent、知识范围和连接器权限" },
+                      { title: "Approval", content: "高风险能力进入审批队列" },
+                      { title: "Artifact", content: "产物写入 manifest 并进入 Studio" },
                     ]}
                   />
-                  <Card size="small" className="approval-card">
-                    <Flex justify="space-between" align="center" gap={12}>
-                      <div>
-                        <Tag color="warning">中风险</Tag>
-                        <Paragraph className="approval-copy">浏览器写入草稿箱，不提交发布。</Paragraph>
-                      </div>
-                      <Button type="primary" onClick={() => setApprovalOpen(true)}>处理审批</Button>
-                    </Flex>
-                  </Card>
+                  <TaskActionBar task={selectedTask} onStatusChange={updateTaskStatus} />
+                </Card>
+              </Col>
+            </Row>
+
+            <Row gutter={[16, 16]}>
+              <Col xs={24} xl={15}>
+                <TaskRunPanel task={selectedTask} />
+              </Col>
+              <Col xs={24} xl={9}>
+                <Card title="审批概览" extra={<Button onClick={() => setApprovalOpen(true)}>处理</Button>}>
+                  {approvals.length === 0 ? (
+                    <Empty description="暂无审批" />
+                  ) : (
+                    <div className="list-panel">
+                      {approvals.slice(0, 3).map((item) => (
+                        <div className="list-row" key={item.key}>
+                          <div>
+                            <Text strong>{item.title}</Text>
+                            <Text type="secondary" className="row-meta">{item.reason}</Text>
+                          </div>
+                          <Space wrap>
+                            {riskTag(item.risk)}
+                            <Tag>{item.status}</Tag>
+                          </Space>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </Card>
               </Col>
             </Row>
@@ -281,13 +747,19 @@ export default function App() {
           </Space>
         );
       case "agents":
-        return <AgentsPage />;
+        return <AgentsPage agents={agents} onCreate={() => setAgentDrawerOpen(true)} />;
       case "plugins":
         return <PluginsPage onStart={() => setPluginOpen(true)} />;
       case "knowledge":
-        return <KnowledgePage />;
+        return <KnowledgePage knowledgeItems={knowledgeItems} onCreate={() => setKnowledgeDrawerOpen(true)} />;
       case "connectors":
-        return <ConnectorsPage />;
+        return (
+          <ConnectorsPage
+            connectors={connectors}
+            onCreateMcp={() => setConnectorDrawer({ open: true, kind: "MCP" })}
+            onCreateCli={() => setConnectorDrawer({ open: true, kind: "CLI" })}
+          />
+        );
       case "creative":
         return <CreativePage />;
       case "workflows":
@@ -298,6 +770,55 @@ export default function App() {
         return <SettingsPage />;
     }
   }
+}
+
+function stepIndexForTask(status: TaskStatus) {
+  if (status === "queued") return 0;
+  if (status === "running" || status === "paused") return 1;
+  if (status === "approval" || status === "failed") return 2;
+  return 3;
+}
+
+function TaskActionBar({ task, onStatusChange }: { task: Task; onStatusChange: (taskKey: string, status: TaskStatus) => void }) {
+  const canPause = task.status === "running" || task.status === "queued";
+  const canResume = task.status === "paused" || task.status === "approval";
+  const canRetry = task.status === "failed" || task.status === "cancelled";
+
+  return (
+    <Flex wrap gap={8} className="task-actions">
+      <Button disabled={!canPause} onClick={() => onStatusChange(task.key, "paused")}>暂停</Button>
+      <Button disabled={!canResume} onClick={() => onStatusChange(task.key, "running")}>继续</Button>
+      <Button disabled={!canRetry} onClick={() => onStatusChange(task.key, "queued")}>重试</Button>
+      <Button danger disabled={task.status === "done" || task.status === "cancelled"} onClick={() => onStatusChange(task.key, "cancelled")}>停止</Button>
+    </Flex>
+  );
+}
+
+function TaskRunPanel({ task }: { task: Task }) {
+  const items = [
+    {
+      color: "blue",
+      content: `run.created · ${task.title}`,
+    },
+    {
+      color: task.status === "failed" ? "red" : "green",
+      content: `context.bound · ${task.owner} / ${task.runtime}`,
+    },
+    {
+      color: task.status === "approval" ? "gold" : "blue",
+      content: task.status === "approval" ? "approval.requested · 等待能力授权" : "tool_call.completed · 知识与连接器上下文已准备",
+    },
+    {
+      color: task.status === "done" ? "green" : "gray",
+      content: task.status === "done" ? "artifact.created · 产物已写入 Studio" : "artifact.pending · 等待运行输出",
+    },
+  ];
+
+  return (
+    <Card title="运行事件" extra={<Tag>{task.runtime}</Tag>}>
+      <Timeline items={items} />
+    </Card>
+  );
 }
 
 function ArtifactSnapshot({ onOpenStudio }: { onOpenStudio: () => void }) {
@@ -324,25 +845,35 @@ function ArtifactSnapshot({ onOpenStudio }: { onOpenStudio: () => void }) {
   );
 }
 
-function AgentsPage() {
+function AgentsPage({ agents, onCreate }: { agents: AgentRecord[]; onCreate: () => void }) {
   return (
     <Row gutter={[16, 16]}>
       <Col xs={24} xl={15}>
-        <Card title="Agent 列表" extra={<Button type="primary">创建 Agent</Button>}>
+        <Card title="Agent 列表" extra={<Button type="primary" onClick={onCreate}>创建 Agent</Button>}>
           <Table
-            rowKey="name"
+            rowKey="key"
             pagination={false}
             columns={[
               { title: "名称", dataIndex: "name" },
               { title: "Runtime", dataIndex: "runtime" },
+              { title: "模型", dataIndex: "model" },
               { title: "能力", dataIndex: "capability" },
-              { title: "状态", dataIndex: "status", render: (value) => <Tag color={value === "运行中" ? "processing" : "success"}>{value}</Tag> },
+              {
+                title: "状态",
+                dataIndex: "status",
+                render: (value) => <Tag color={value === "运行中" ? "processing" : value === "禁用" ? "default" : "success"}>{value}</Tag>,
+              },
             ]}
-            dataSource={[
-              { name: "内容选题 Agent", runtime: "BrowserOps", capability: "4 Skills · 2 MCP", status: "启用" },
-              { name: "开发工程师", runtime: "Codex", capability: "3 Skills · 3 CLI", status: "运行中" },
-              { name: "设计素材 Agent", runtime: "OpenCode", capability: "2 Plugins", status: "启用" },
-            ]}
+            dataSource={agents}
+            expandable={{
+              expandedRowRender: (record) => (
+                <Descriptions column={1} size="small">
+                  <Descriptions.Item label="说明">{record.description}</Descriptions.Item>
+                  <Descriptions.Item label="知识范围">{record.knowledgeScope}</Descriptions.Item>
+                  <Descriptions.Item label="权限策略">{record.permissionProfile}</Descriptions.Item>
+                </Descriptions>
+              ),
+            }}
           />
         </Card>
       </Col>
@@ -389,7 +920,7 @@ function PluginsPage({ onStart }: { onStart: () => void }) {
               className="plugin-card"
               title={name}
               extra={<Tag color={color}>{label}</Tag>}
-              actions={[<Button type={name === "自媒体周更" ? "primary" : "default"} onClick={onStart}>启动</Button>]}
+              actions={[<Button key="start" type={name === "自媒体周更" ? "primary" : "default"} onClick={onStart}>启动</Button>]}
             >
               <Paragraph>{desc}</Paragraph>
               <Space wrap>
@@ -406,30 +937,38 @@ function PluginsPage({ onStart }: { onStart: () => void }) {
   );
 }
 
-function KnowledgePage() {
+function KnowledgePage({ knowledgeItems, onCreate }: { knowledgeItems: KnowledgeItem[]; onCreate: () => void }) {
+  const tabLabels = ["全部", "SOP", "品牌", "平台规则", "决策"];
   return (
     <Row gutter={[16, 16]}>
       <Col xs={24} xl={15}>
-        <Card title="团队知识库" extra={<Button type="primary">新增知识</Button>}>
+        <Card title="团队知识库" extra={<Button type="primary" onClick={onCreate}>新增知识</Button>}>
           <Tabs
-            items={["全部", "SOP", "品牌", "平台规则", "决策"].map((label) => ({
-              key: label,
-              label,
-              children: (
-                <List
-                  dataSource={[
-                    ["公众号发布前审核 SOP", "SOP · 今天 09:42 · 引用 12 次", "已审核"],
-                    ["BRAND.md：品牌语气与视觉规范", "契约 · 全团队 · 当前版本", "契约"],
-                    ["小红书标签与标题规则", "平台规则 · 下周复核", "将过期"],
-                  ]}
-                  renderItem={(item) => (
-                    <List.Item actions={[<Tag color={item[2] === "将过期" ? "warning" : "success"}>{item[2]}</Tag>]}>
-                      <List.Item.Meta title={item[0]} description={item[1]} />
-                    </List.Item>
-                  )}
-                />
-              ),
-            }))}
+            items={tabLabels.map((label) => {
+              const data = label === "全部" ? knowledgeItems : knowledgeItems.filter((item) => item.type === label);
+              return {
+                key: label,
+                label,
+                children: data.length === 0 ? (
+                    <Empty description="暂无知识条目" />
+                  ) : (
+                    <div className="list-panel">
+                      {data.map((item) => (
+                        <div className="list-row" key={item.key}>
+                          <div>
+                            <Text strong>{item.title}</Text>
+                            <Space wrap className="row-meta">
+                              <Text type="secondary">{item.meta}</Text>
+                              {item.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+                            </Space>
+                          </div>
+                          <Tag color={item.status === "将过期" ? "warning" : item.status === "草稿" ? "default" : "success"}>{item.status}</Tag>
+                        </div>
+                      ))}
+                    </div>
+                  ),
+              };
+            })}
           />
         </Card>
       </Col>
@@ -443,31 +982,76 @@ function KnowledgePage() {
             <Tag>竞品资料</Tag>
           </Space>
         </Card>
+        <Card title="检索策略" className="top-gap">
+          <Steps
+            size="small"
+            current={2}
+            items={[
+              { title: "范围过滤" },
+              { title: "状态过滤" },
+              { title: "FTS 召回" },
+              { title: "引用返回" },
+            ]}
+          />
+        </Card>
       </Col>
     </Row>
   );
 }
 
-function ConnectorsPage() {
-  const connectors = [
-    ["GitHub MCP", "stdio · 12 tools · 绑定开发工程师", "在线", "success"],
-    ["Filesystem MCP", "工作区只读默认 · 写入需审批", "在线", "success"],
-    ["pnpm build", "command template · timeout 120s", "CLI", "processing"],
-    ["ffmpeg render", "视频 worker 渲染和转码", "待检查", "warning"],
-  ];
+function ConnectorsPage({
+  connectors,
+  onCreateMcp,
+  onCreateCli,
+}: {
+  connectors: ConnectorRecord[];
+  onCreateMcp: () => void;
+  onCreateCli: () => void;
+}) {
   return (
-    <Card title="MCP 与 CLI 连接器" extra={<Space><Button>注册 CLI</Button><Button type="primary">添加 MCP</Button></Space>}>
-      <Row gutter={[16, 16]}>
-        {connectors.map(([name, desc, status, color]) => (
-          <Col xs={24} md={12} xl={6} key={name}>
-            <Card title={name} extra={<Tag color={color}>{status}</Tag>}>
-              <Paragraph>{desc}</Paragraph>
-              <Space wrap><Tag>allowlist</Tag><Tag>audit</Tag></Space>
-            </Card>
+    <Space orientation="vertical" size={16} className="full-width">
+      <Card title="MCP 与 CLI 连接器" extra={<Space><Button onClick={onCreateCli}>注册 CLI</Button><Button type="primary" onClick={onCreateMcp}>添加 MCP</Button></Space>}>
+        <Row gutter={[16, 16]}>
+          {connectors.map((connector) => (
+            <Col xs={24} md={12} xl={6} key={connector.key}>
+              <Card title={connector.name} extra={<Tag color={connector.kind === "MCP" ? "blue" : "purple"}>{connector.kind}</Tag>}>
+                <Paragraph>{connector.description}</Paragraph>
+                <Space wrap>
+                  <Tag>{connector.status}</Tag>
+                  {riskTag(connector.risk)}
+                  <Tag>{connector.binding}</Tag>
+                </Space>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </Card>
+      <Card title="调用策略">
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={8}>
+            <PolicyItem icon={<SafetyOutlined />} title="Allowlist" text="Agent 只能调用绑定范围内的 MCP tools 和 CLI commands。" />
           </Col>
-        ))}
-      </Row>
-    </Card>
+          <Col xs={24} md={8}>
+            <PolicyItem icon={<AuditOutlined />} title="Approval" text="中高风险命令进入统一审批队列，记录参数与来源。" />
+          </Col>
+          <Col xs={24} md={8}>
+            <PolicyItem icon={<CodeOutlined />} title="Audit" text="执行结果写入运行事件，支持任务回放和失败诊断。" />
+          </Col>
+        </Row>
+      </Card>
+    </Space>
+  );
+}
+
+function PolicyItem({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
+  return (
+    <Flex gap={12} align="flex-start">
+      <div className="policy-icon">{icon}</div>
+      <div>
+        <Text strong>{title}</Text>
+        <Paragraph type="secondary" className="compact-copy">{text}</Paragraph>
+      </div>
+    </Flex>
   );
 }
 
@@ -548,7 +1132,8 @@ function CoverPreview() {
 function DiffPreview() {
   return (
     <pre className="diff-preview">{`+ plugin_grants 表记录授权来源
-+ artifact manifest 增加 contractVersions
++ task_status 支持 queued / paused / cancelled
++ connectors 统一 MCP 与 CLI 注册表
 - 旧资产仅记录本地路径`}</pre>
   );
 }
@@ -598,14 +1183,17 @@ function SettingsPage() {
     <Row gutter={[16, 16]}>
       <Col xs={24} xl={12}>
         <Card title="模型与 Runtime">
-          <List
-            dataSource={["Codex CLI", "OpenCode", "GenericAgent Worker"]}
-            renderItem={(item, index) => (
-              <List.Item actions={[<Switch defaultChecked={index < 2} />]}>
-                <List.Item.Meta title={item} description={index === 2 ? "127.0.0.1:3917" : "已连接"} />
-              </List.Item>
-            )}
-          />
+          <div className="list-panel">
+            {["Codex CLI", "OpenCode", "GenericAgent Worker"].map((item, index) => (
+              <div className="list-row" key={item}>
+                <div>
+                  <Text strong>{item}</Text>
+                  <Text type="secondary" className="row-meta">{index === 2 ? "127.0.0.1:3917" : "已连接"}</Text>
+                </div>
+                <Switch defaultChecked={index < 2} />
+              </div>
+            ))}
+          </div>
         </Card>
       </Col>
       <Col xs={24} xl={12}>
@@ -615,36 +1203,62 @@ function SettingsPage() {
             <Radio value="collab">协作</Radio>
             <Radio value="strict">保守</Radio>
           </Radio.Group>
-          <List
-            className="top-gap"
-            dataSource={["插件安装：需要确认", "真实账号发布：禁止自动提交", "Secret 注入：仅运行时"]}
-            renderItem={(item) => <List.Item>{item}</List.Item>}
-          />
+          <div className="list-panel top-gap">
+            {["插件安装：需要确认", "真实账号发布：禁止自动提交", "Secret 注入：仅运行时"].map((item) => (
+              <div className="list-row" key={item}>
+                <Text>{item}</Text>
+                <CheckCircleOutlined className="success-icon" />
+              </div>
+            ))}
+          </div>
         </Card>
       </Col>
     </Row>
   );
 }
 
-function ApprovalDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ApprovalDrawer({
+  open,
+  approvals,
+  onClose,
+  onRespond,
+}: {
+  open: boolean;
+  approvals: ApprovalRecord[];
+  onClose: () => void;
+  onRespond: (approvalKey: string, decision: ApprovalRecord["status"]) => void;
+}) {
+  const pendingApprovals = approvals.filter((item) => item.status === "pending");
+
   return (
-    <Drawer title="审批请求" open={open} onClose={onClose} size={480}>
-      <Card className="approval-card">
-        <Tag color="warning">中风险</Tag>
-        <Title level={4}>发布 Agent 请求浏览器输入</Title>
-        <Paragraph>目标：微信公众平台草稿箱。动作：填入标题、正文和封面，不提交发布。</Paragraph>
-      </Card>
-      <Descriptions column={1} bordered size="small" className="top-gap">
-        <Descriptions.Item label="来源 Agent">发布 Agent</Descriptions.Item>
-        <Descriptions.Item label="来源 Plugin">自媒体周更</Descriptions.Item>
-        <Descriptions.Item label="权限">browser:input · files:read</Descriptions.Item>
-        <Descriptions.Item label="审计">将记录截图、DOM 摘要和输入参数</Descriptions.Item>
-      </Descriptions>
-      <Flex justify="end" gap={8} className="drawer-actions">
-        <Button onClick={onClose}>拒绝</Button>
-        <Button>编辑参数</Button>
-        <Button type="primary" onClick={onClose}>允许本次</Button>
-      </Flex>
+    <Drawer title="审批请求" open={open} onClose={onClose} size={520}>
+      {pendingApprovals.length === 0 ? (
+        <Empty description="暂无待审批动作" />
+      ) : (
+        <Space orientation="vertical" size={16} className="full-width">
+          {pendingApprovals.map((approval) => (
+            <Card key={approval.key} className="approval-card">
+              <Space wrap>
+                {riskTag(approval.risk)}
+                <Tag>{approval.source}</Tag>
+              </Space>
+              <Title level={4}>{approval.title}</Title>
+              <Paragraph>{approval.reason}</Paragraph>
+              <Descriptions column={1} bordered size="small">
+                <Descriptions.Item label="能力">
+                  <Space wrap>{approval.capabilities.map((capability) => <Tag key={capability}>{capability}</Tag>)}</Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="审计">将记录来源、参数、审批人和执行结果</Descriptions.Item>
+              </Descriptions>
+              <Flex justify="end" gap={8} className="drawer-actions">
+                <Button onClick={() => onRespond(approval.key, "denied")}>拒绝</Button>
+                <Button>编辑参数</Button>
+                <Button type="primary" onClick={() => onRespond(approval.key, "allowed")}>允许本次</Button>
+              </Flex>
+            </Card>
+          ))}
+        </Space>
+      )}
     </Drawer>
   );
 }
@@ -653,12 +1267,323 @@ function PluginModal({ open, onCancel, onOk }: { open: boolean; onCancel: () => 
   return (
     <Modal title="启动插件：自媒体周更" open={open} onCancel={onCancel} onOk={onOk} okText="授权并启动" cancelText="取消">
       <Paragraph type="secondary">确认本次运行将使用的能力。</Paragraph>
-      <Space orientation="vertical">
-        <Switch defaultChecked /> <Text>`network:read` 读取热榜与竞品页面</Text>
-        <Switch defaultChecked /> <Text>`knowledge:read` 检索 BRAND.md / CONTENT.md / SOP</Text>
-        <Switch defaultChecked /> <Text>`files:write` 写入 artifact project</Text>
-        <Switch /> <Text>`browser:input` 写入公众号草稿箱</Text>
+      <Space orientation="vertical" className="full-width">
+        <CapabilityRow capability="network:read" text="读取热榜与竞品页面" enabled />
+        <CapabilityRow capability="knowledge:read" text="检索 BRAND.md / CONTENT.md / SOP" enabled />
+        <CapabilityRow capability="files:write" text="写入 artifact project" enabled />
+        <CapabilityRow capability="browser:input" text="写入公众号草稿箱" />
       </Space>
     </Modal>
+  );
+}
+
+function CapabilityRow({ capability, text, enabled = false }: { capability: string; text: string; enabled?: boolean }) {
+  return (
+    <Flex align="center" gap={12} className="capability-row">
+      <Switch defaultChecked={enabled} />
+      <Text><Text code>{capability}</Text> {text}</Text>
+    </Flex>
+  );
+}
+
+function TaskModal({
+  open,
+  agents,
+  onCancel,
+  onCreate,
+}: {
+  open: boolean;
+  agents: AgentRecord[];
+  onCancel: () => void;
+  onCreate: (values: TaskFormValues) => void;
+}) {
+  const [form] = Form.useForm<TaskFormValues>();
+  const targetType = Form.useWatch("targetType", form) ?? "agent_team";
+  const targetOptions =
+    targetType === "agent"
+      ? agents.map((agent) => ({ value: agent.key, label: agent.name }))
+      : targetType === "plugin"
+        ? [
+            { value: "自媒体周更插件", label: "自媒体周更插件" },
+            { value: "代码需求实现插件", label: "代码需求实现插件" },
+            { value: "产品上线宣传包", label: "产品上线宣传包" },
+          ]
+        : [{ value: "team_content_ops", label: "自媒体内容团队" }];
+
+  return (
+    <Modal
+      title="新建任务"
+      open={open}
+      onCancel={onCancel}
+      onOk={() => form.submit()}
+      okText="创建任务"
+      cancelText="取消"
+      destroyOnHidden
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{
+          title: "公众号周更：AI Agent 工作流",
+          targetType: "agent_team",
+          targetId: "team_content_ops",
+          priority: "normal",
+          requiresApproval: true,
+        }}
+        onValuesChange={(changed) => {
+          if (changed.targetType) {
+            const nextTarget = changed.targetType === "agent" ? agents[0]?.key : changed.targetType === "plugin" ? "自媒体周更插件" : "team_content_ops";
+            form.setFieldValue("targetId", nextTarget);
+          }
+        }}
+        onFinish={(values) => {
+          onCreate(values);
+          form.resetFields();
+        }}
+      >
+        <Form.Item label="任务标题" name="title" rules={[{ required: true, message: "请输入任务标题" }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item label="任务说明" name="prompt" rules={[{ required: true, message: "请输入任务说明" }]}>
+          <Input.TextArea rows={4} placeholder="描述目标、输入、验收标准和需要生成的产物" />
+        </Form.Item>
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item label="目标类型" name="targetType">
+              <Select
+                options={[
+                  { value: "agent_team", label: "Agent Team" },
+                  { value: "agent", label: "单 Agent" },
+                  { value: "plugin", label: "Workflow Plugin" },
+                ]}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="运行目标" name="targetId" rules={[{ required: true, message: "请选择运行目标" }]}>
+              <Select options={targetOptions} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item label="优先级" name="priority">
+              <Radio.Group optionType="button" buttonStyle="solid">
+                <Radio value="normal">普通</Radio>
+                <Radio value="high">高</Radio>
+              </Radio.Group>
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="启动前审批" name="requiresApproval" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+          </Col>
+        </Row>
+      </Form>
+    </Modal>
+  );
+}
+
+function AgentDrawer({
+  open,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (values: AgentFormValues) => void;
+}) {
+  const [form] = Form.useForm<AgentFormValues>();
+  return (
+    <Drawer
+      title="创建 Agent"
+      open={open}
+      onClose={onClose}
+      size={520}
+      extra={<Button type="primary" onClick={() => form.submit()}>保存</Button>}
+      destroyOnHidden
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{
+          runtime: "Codex",
+          model: "gpt-5.4",
+          permissionProfile: "collaborative",
+          skillIds: ["web-access"],
+          knowledgeScope: "项目知识库 / BRAND.md / CONTENT.md",
+        }}
+        onFinish={(values) => {
+          onCreate(values);
+          form.resetFields();
+        }}
+      >
+        <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入 Agent 名称" }]}>
+          <Input placeholder="例如：内容审核 Agent" />
+        </Form.Item>
+        <Form.Item label="说明" name="description" rules={[{ required: true, message: "请输入 Agent 说明" }]}>
+          <Input.TextArea rows={3} />
+        </Form.Item>
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item label="Runtime" name="runtime">
+              <Select options={["Codex", "OpenCode", "BrowserOps", "GenericAgent"].map((value) => ({ value, label: value }))} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="模型" name="model">
+              <Select options={["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"].map((value) => ({ value, label: value }))} />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item label="系统提示词" name="systemPrompt">
+          <Input.TextArea rows={5} placeholder="描述角色、边界、输出格式和审批策略" />
+        </Form.Item>
+        <Form.Item label="绑定 Skills" name="skillIds">
+          <Select
+            mode="multiple"
+            options={["web-access", "content-planner", "code-review", "artifact-export"].map((value) => ({ value, label: value }))}
+          />
+        </Form.Item>
+        <Form.Item label="知识范围" name="knowledgeScope">
+          <Input />
+        </Form.Item>
+        <Form.Item label="权限策略" name="permissionProfile">
+          <Radio.Group optionType="button" buttonStyle="solid">
+            <Radio value="strict">保守</Radio>
+            <Radio value="collaborative">协作</Radio>
+            <Radio value="auto">自动化</Radio>
+          </Radio.Group>
+        </Form.Item>
+      </Form>
+    </Drawer>
+  );
+}
+
+function KnowledgeDrawer({
+  open,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (values: KnowledgeFormValues) => void;
+}) {
+  const [form] = Form.useForm<KnowledgeFormValues>();
+  return (
+    <Drawer
+      title="新增知识条目"
+      open={open}
+      onClose={onClose}
+      size={520}
+      extra={<Button type="primary" onClick={() => form.submit()}>保存草稿</Button>}
+      destroyOnHidden
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{ type: "SOP", visibility: "project", tags: ["审核"] }}
+        onFinish={(values) => {
+          onCreate(values);
+          form.resetFields();
+        }}
+      >
+        <Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入知识标题" }]}>
+          <Input placeholder="例如：公众号发布前审核 SOP" />
+        </Form.Item>
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item label="类型" name="type">
+              <Select options={["SOP", "品牌", "平台规则", "决策", "代码文档"].map((value) => ({ value, label: value }))} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="可见范围" name="visibility">
+              <Select
+                options={[
+                  { value: "project", label: "项目" },
+                  { value: "team", label: "团队" },
+                ]}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item label="标签" name="tags">
+          <Select mode="tags" placeholder="输入后回车" />
+        </Form.Item>
+        <Form.Item label="正文" name="content" rules={[{ required: true, message: "请输入知识正文" }]}>
+          <Input.TextArea rows={8} placeholder="支持粘贴 Markdown、会议纪要、规则摘要或代码文档片段" />
+        </Form.Item>
+      </Form>
+    </Drawer>
+  );
+}
+
+function ConnectorDrawer({
+  open,
+  kind,
+  agents,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  kind: ConnectorKind;
+  agents: AgentRecord[];
+  onClose: () => void;
+  onCreate: (kind: ConnectorKind, values: ConnectorFormValues) => void;
+}) {
+  const [form] = Form.useForm<ConnectorFormValues>();
+  return (
+    <Drawer
+      title={kind === "MCP" ? "添加 MCP Server" : "注册 CLI Command"}
+      open={open}
+      onClose={onClose}
+      size={520}
+      extra={<Button type="primary" onClick={() => form.submit()}>注册</Button>}
+      destroyOnHidden
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{
+          risk: kind === "MCP" ? "medium" : "low",
+          binding: agents[0]?.name,
+          command: kind === "MCP" ? "github-mcp-server stdio" : "pnpm build",
+        }}
+        onFinish={(values) => {
+          onCreate(kind, values);
+          form.resetFields();
+        }}
+      >
+        <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入连接器名称" }]}>
+          <Input placeholder={kind === "MCP" ? "例如：GitHub MCP" : "例如：pnpm build"} />
+        </Form.Item>
+        <Form.Item label={kind === "MCP" ? "命令 / URL" : "命令模板"} name="command" rules={[{ required: true, message: "请输入命令或 URL" }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item label="说明" name="description" rules={[{ required: true, message: "请输入说明" }]}>
+          <Input.TextArea rows={3} placeholder="说明用途、参数、输出格式和失败诊断方式" />
+        </Form.Item>
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item label="风险等级" name="risk">
+              <Select
+                options={[
+                  { value: "low", label: "低风险" },
+                  { value: "medium", label: "中风险" },
+                  { value: "high", label: "高风险" },
+                ]}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="默认绑定" name="binding">
+              <Select options={agents.map((agent) => ({ value: agent.name, label: agent.name }))} />
+            </Form.Item>
+          </Col>
+        </Row>
+      </Form>
+    </Drawer>
   );
 }
