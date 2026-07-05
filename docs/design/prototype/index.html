@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agent Workbench - Ant Design Prototype</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+
+    <div class="app-layout">
+      <aside class="sider" aria-label="主导航">
+        <div class="brand">
+          <div class="brand-logo" aria-hidden="true">A</div>
+          <div>
+            <strong>Agent Workbench</strong>
+            <span>Local Agent Console</span>
+          </div>
+        </div>
+
+        <nav class="menu" aria-label="页面导航">
+          <button class="menu-item active" type="button" data-view="overview"><span class="menu-icon">01</span>工作台</button>
+          <button class="menu-item" type="button" data-view="agents"><span class="menu-icon">02</span>Agents</button>
+          <button class="menu-item" type="button" data-view="plugins"><span class="menu-icon">03</span>插件</button>
+          <button class="menu-item" type="button" data-view="knowledge"><span class="menu-icon">04</span>知识库</button>
+          <button class="menu-item" type="button" data-view="connectors"><span class="menu-icon">05</span>连接器</button>
+          <button class="menu-item" type="button" data-view="creative"><span class="menu-icon">06</span>Creative Studio</button>
+          <button class="menu-item" type="button" data-view="workflows"><span class="menu-icon">07</span>工作流</button>
+          <button class="menu-item" type="button" data-view="assets"><span class="menu-icon">08</span>资产</button>
+          <button class="menu-item" type="button" data-view="settings"><span class="menu-icon">09</span>设置</button>
+        </nav>
+
+        <section class="runtime-card" aria-label="运行状态">
+          <div class="runtime-title">Runtime Pool</div>
+          <div class="runtime-line"><span>Codex</span><strong class="ok">2</strong></div>
+          <div class="runtime-line"><span>OpenCode</span><strong class="ok">1</strong></div>
+          <div class="runtime-line"><span>BrowserOps</span><strong class="warn">1</strong></div>
+          <div class="runtime-line"><span>Creative</span><strong>0</strong></div>
+        </section>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div class="page-title">
+            <h1 id="page-title">工作台</h1>
+            <p id="page-subtitle">任务、审批、产物和运行状态集中管理</p>
+          </div>
+          <div class="header-actions">
+            <label class="search-control">
+              <span class="visually-hidden">搜索任务、Agent、插件或知识</span>
+              <input type="search" placeholder="搜索任务、Agent、插件、知识">
+            </label>
+            <button class="btn" type="button" data-open-drawer>审批队列</button>
+            <button class="btn primary" type="button">新建任务</button>
+          </div>
+        </header>
+
+        <main id="main" class="content">
+          <section class="view active" id="overview" aria-label="工作台">
+            <div class="stat-grid">
+              <article class="stat-card">
+                <span>运行中任务</span>
+                <strong>6</strong>
+                <small>2 个等待审批</small>
+              </article>
+              <article class="stat-card">
+                <span>今日产物</span>
+                <strong>24</strong>
+                <small>文章 7 · 图片 9 · Diff 4</small>
+              </article>
+              <article class="stat-card">
+                <span>知识引用</span>
+                <strong>38</strong>
+                <small>品牌契约引用 11 次</small>
+              </article>
+              <article class="stat-card">
+                <span>插件运行</span>
+                <strong>9</strong>
+                <small>自媒体周更最常用</small>
+              </article>
+              <article class="stat-card danger">
+                <span>风险动作</span>
+                <strong>4</strong>
+                <small>浏览器写入需确认</small>
+              </article>
+            </div>
+
+            <div class="dashboard">
+              <section class="card task-card">
+                <div class="card-head">
+                  <div>
+                    <h2>任务队列</h2>
+                    <p>跨自媒体、编码、运营的统一运行队列</p>
+                  </div>
+                  <div class="segmented" role="tablist" aria-label="任务筛选">
+                    <button class="selected" type="button" data-filter="all">全部</button>
+                    <button type="button" data-filter="approval">审批</button>
+                    <button type="button" data-filter="failed">异常</button>
+                  </div>
+                </div>
+
+                <div class="table task-table" role="table" aria-label="任务列表">
+                  <div class="table-row table-head" role="row">
+                    <span>任务</span><span>Owner</span><span>Runtime</span><span>状态</span>
+                  </div>
+                  <button class="table-row selected" type="button" data-task="media" data-status="approval" role="row">
+                    <span><strong>公众号周更：AI Agent 工作流</strong><small>选题、正文、封面、发布包</small></span>
+                    <span>内容团队</span>
+                    <span>BrowserOps</span>
+                    <span class="tag warning">待审批</span>
+                  </button>
+                  <button class="table-row" type="button" data-task="coding" data-status="running" role="row">
+                    <span><strong>实现 Plugin Capability Gate</strong><small>权限弹窗与审计记录</small></span>
+                    <span>开发工程师</span>
+                    <span>Codex</span>
+                    <span class="tag processing">运行中</span>
+                  </button>
+                  <button class="table-row" type="button" data-task="creative" data-status="done" role="row">
+                    <span><strong>产品上线宣传包</strong><small>Landing page、PPT、海报</small></span>
+                    <span>Creative Studio</span>
+                    <span>OpenCode</span>
+                    <span class="tag success">已完成</span>
+                  </button>
+                  <button class="table-row" type="button" data-task="ops" data-status="failed" role="row">
+                    <span><strong>竞品账号内容趋势复盘</strong><small>热榜、评论、互动指标</small></span>
+                    <span>运营 Agent</span>
+                    <span>BrowserOps</span>
+                    <span class="tag error">需处理</span>
+                  </button>
+                </div>
+              </section>
+
+              <aside class="card run-detail">
+                <div class="card-head tight">
+                  <div>
+                    <h2 id="run-title">公众号周更：AI Agent 工作流</h2>
+                    <p id="run-meta">内容团队 · BrowserOps + Writer · 38m</p>
+                  </div>
+                  <span id="run-status" class="tag warning">待审批</span>
+                </div>
+
+                <ol class="steps">
+                  <li class="done"><span></span><div><strong>Discovery</strong><small>热榜、竞品和历史素材已整理</small></div></li>
+                  <li class="done"><span></span><div><strong>Generate</strong><small>正文草稿、标题和封面 brief 已生成</small></div></li>
+                  <li class="active"><span></span><div><strong>Approval</strong><small>准备写入公众号草稿箱</small></div></li>
+                  <li><span></span><div><strong>Handoff</strong><small>导出发布包和复盘卡片</small></div></li>
+                </ol>
+
+                <div class="approval-summary">
+                  <div>
+                    <span class="tag warning">中风险</span>
+                    <h3>浏览器写入草稿箱</h3>
+                    <p>目标：微信公众平台 · 动作：填入草稿，不提交发布</p>
+                  </div>
+                  <button class="btn primary" type="button" data-open-drawer>处理审批</button>
+                </div>
+              </aside>
+
+              <section class="card wide">
+                <div class="card-head">
+                  <div>
+                    <h2>Artifact Studio 快照</h2>
+                    <p>当前任务已生成 5 个产物，均带来源和知识引用</p>
+                  </div>
+                  <button class="btn" type="button" data-view-link="creative">打开 Studio</button>
+                </div>
+                <div class="artifact-strip">
+                  <article><span class="file-type md">MD</span><strong>draft.md</strong><small>正文草稿 · 2 引用</small></article>
+                  <article><span class="file-type png">PNG</span><strong>cover.png</strong><small>封面图 · BRAND.md</small></article>
+                  <article><span class="file-type html">HTML</span><strong>landing.html</strong><small>预览可用</small></article>
+                  <article><span class="file-type zip">ZIP</span><strong>publish.zip</strong><small>发布包</small></article>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="view" id="agents" aria-label="Agents">
+            <div class="two-col">
+              <section class="card">
+                <div class="card-head">
+                  <div><h2>Agent 列表</h2><p>Agent 绑定 runtime、skills、插件、知识范围和连接器</p></div>
+                  <button class="btn primary" type="button">创建 Agent</button>
+                </div>
+                <div class="table agent-table">
+                  <div class="table-row table-head"><span>名称</span><span>Runtime</span><span>能力</span><span>状态</span></div>
+                  <div class="table-row"><span><strong>内容选题 Agent</strong><small>热榜与竞品研究</small></span><span>BrowserOps</span><span>4 Skills · 2 MCP</span><span class="tag success">启用</span></div>
+                  <div class="table-row"><span><strong>开发工程师</strong><small>代码修改与测试</small></span><span>Codex</span><span>3 Skills · 3 CLI</span><span class="tag processing">运行中</span></div>
+                  <div class="table-row"><span><strong>设计素材 Agent</strong><small>海报、PPT、Landing Page</small></span><span>OpenCode</span><span>2 Plugins</span><span class="tag success">启用</span></div>
+                  <div class="table-row"><span><strong>审核员 Agent</strong><small>事实、风格、平台规则</small></span><span>Codex</span><span>知识库只读</span><span class="tag default">空闲</span></div>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-head tight"><div><h2>团队编排</h2><p>自媒体周更 · 串行 + 审批</p></div></div>
+                <div class="pipeline">
+                  <span>选题</span><i></i><span>写作</span><i></i><span>设计</span><i></i><span class="review">审核</span><i></i><span>发布包</span>
+                </div>
+                <div class="form-block">
+                  <label for="agent-prompt">审核员系统提示词</label>
+                  <textarea id="agent-prompt" readonly>检查事实、平台格式、敏感风险、品牌语气和发布完整性。涉及真实账号写入或提交时必须请求人工审批。</textarea>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="view" id="plugins" aria-label="插件">
+            <div class="card">
+              <div class="card-head">
+                <div><h2>Workflow Plugins</h2><p>插件把 skill、MCP、CLI、知识范围和产物类型组合为可复用流程</p></div>
+                <button class="btn primary" type="button">安装插件</button>
+              </div>
+              <div class="plugin-grid">
+                <article class="plugin-card">
+                  <div class="plugin-top"><strong>自媒体周更</strong><span class="tag success">内置</span></div>
+                  <p>热榜采集、正文生成、封面 brief、审核、发布包</p>
+                  <div class="stage-list"><span>Discovery</span><span>Generate</span><span>Critique</span><span>Handoff</span></div>
+                  <div class="plugin-footer"><small>2 MCP · 1 CLI · 4 Skills</small><button class="btn primary small" type="button" data-open-plugin>启动</button></div>
+                </article>
+                <article class="plugin-card">
+                  <div class="plugin-top"><strong>代码需求实现</strong><span class="tag processing">P0</span></div>
+                  <p>需求澄清、代码修改、测试、diff 审批、变更摘要</p>
+                  <div class="stage-list"><span>Plan</span><span>Patch</span><span>Test</span><span>Review</span></div>
+                  <div class="plugin-footer"><small>3 CLI · 2 Skills</small><button class="btn small" type="button" data-open-plugin>授权</button></div>
+                </article>
+                <article class="plugin-card">
+                  <div class="plugin-top"><strong>产品上线宣传包</strong><span class="tag warning">需授权</span></div>
+                  <p>Landing page、PPT、社媒图、短视频脚本和导出包</p>
+                  <div class="stage-list"><span>Brief</span><span>Design</span><span>Export</span></div>
+                  <div class="plugin-footer"><small>Creative · files:write</small><button class="btn small" type="button" data-open-plugin>查看</button></div>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="knowledge" aria-label="知识库">
+            <div class="two-col">
+              <section class="card">
+                <div class="card-head">
+                  <div><h2>团队知识库</h2><p>SOP、平台规则、决策记录和契约文件统一管理</p></div>
+                  <button class="btn primary" type="button">新增知识</button>
+                </div>
+                <div class="tabs" role="tablist" aria-label="知识分类">
+                  <button class="active" type="button">全部</button>
+                  <button type="button">SOP</button>
+                  <button type="button">品牌</button>
+                  <button type="button">平台规则</button>
+                  <button type="button">决策</button>
+                </div>
+                <div class="knowledge-list">
+                  <article><div><strong>公众号发布前审核 SOP</strong><small>SOP · 今天 09:42 · 引用 12 次</small></div><span class="tag success">已审核</span></article>
+                  <article><div><strong>BRAND.md：品牌语气与视觉规范</strong><small>契约 · 全团队 · 当前版本</small></div><span class="tag processing">契约</span></article>
+                  <article><div><strong>小红书标签与标题规则</strong><small>平台规则 · 下周复核</small></div><span class="tag warning">将过期</span></article>
+                  <article><div><strong>选择 OpenCode/Codex 的架构决策</strong><small>决策记录 · 架构组</small></div><span class="tag success">稳定</span></article>
+                </div>
+              </section>
+              <section class="card">
+                <div class="card-head tight"><div><h2>Agent 知识范围</h2><p>显式绑定，默认不可读取全部知识</p></div></div>
+                <div class="scope-panel">
+                  <strong>自媒体内容团队</strong>
+                  <p>可读取内容 SOP、品牌契约、平台规则、竞品资料；可建议更新，不可直接写入。</p>
+                  <div class="tag-row"><span>BRAND.md</span><span>CONTENT.md</span><span>平台规则</span><span>竞品资料</span></div>
+                </div>
+                <div class="citation-box">
+                  <span>最近引用</span>
+                  <strong>公众号发布前审核 SOP</strong>
+                  <small>被发布 Agent 用于审批说明</small>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="view" id="connectors" aria-label="连接器">
+            <div class="card">
+              <div class="card-head">
+                <div><h2>MCP 与 CLI 连接器</h2><p>所有工具进入权限、审计和 Agent 绑定</p></div>
+                <div class="header-actions inner"><button class="btn" type="button">注册 CLI</button><button class="btn primary" type="button">添加 MCP</button></div>
+              </div>
+              <div class="connector-grid">
+                <article><div><strong>GitHub MCP</strong><span class="tag success">在线</span></div><p>stdio · 12 tools · 绑定开发工程师</p><div class="tag-row"><span>issues:read</span><span>pulls:write</span></div></article>
+                <article><div><strong>Filesystem MCP</strong><span class="tag success">在线</span></div><p>工作区只读默认 · 写入需审批</p><div class="tag-row"><span>files:read</span><span>files:write</span></div></article>
+                <article><div><strong>pnpm build</strong><span class="tag processing">CLI</span></div><p>command template · timeout 120s</p><div class="tag-row"><span>schema locked</span><span>low risk</span></div></article>
+                <article><div><strong>ffmpeg render</strong><span class="tag warning">待检查</span></div><p>视频 worker 渲染和转码</p><div class="tag-row"><span>media:write</span><span>cpu:heavy</span></div></article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="creative" aria-label="Creative Studio">
+            <div class="studio-grid">
+              <section class="card preview-card">
+                <div class="card-head">
+                  <div><h2>Creative Studio</h2><p>产物预览、来源、引用、导出集中处理</p></div>
+                  <button class="btn primary" type="button">导出发布包</button>
+                </div>
+                <div class="tabs artifact-tabs" role="tablist" aria-label="产物类型">
+                  <button class="active" type="button" data-artifact="article">正文</button>
+                  <button type="button" data-artifact="landing">Landing</button>
+                  <button type="button" data-artifact="deck">PPT</button>
+                  <button type="button" data-artifact="image">封面</button>
+                  <button type="button" data-artifact="diff">Diff</button>
+                </div>
+                <div class="artifact-preview" id="artifact-preview">
+                  <div class="doc-preview">
+                    <span class="tag processing">Markdown</span>
+                    <h3>AI Agent 工作流：从工具到团队协作</h3>
+                    <p>本文从自媒体、编码、运营三个场景切入，解释为什么通用 Agent 产品不应重写单体 Agent，而应成为任务、工具、知识和产物的工作台。</p>
+                    <ul>
+                      <li>引用：公众号发布前审核 SOP</li>
+                      <li>契约：CONTENT.md v2026-07-04</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="card">
+                <div class="card-head tight"><div><h2>Artifact Manifest</h2><p>产物来源与可追溯信息</p></div></div>
+                <div class="manifest-list">
+                  <div><span>来源 Agent</span><strong>文案 Agent</strong></div>
+                  <div><span>来源 Plugin</span><strong>自媒体周更</strong></div>
+                  <div><span>知识引用</span><strong>2 条</strong></div>
+                  <div><span>契约版本</span><strong>BRAND.md / CONTENT.md</strong></div>
+                  <div><span>导出格式</span><strong>MD / PDF / ZIP</strong></div>
+                </div>
+              </aside>
+            </div>
+          </section>
+
+          <section class="view" id="workflows" aria-label="工作流">
+            <div class="card">
+              <div class="card-head"><div><h2>工作流模板</h2><p>从模板升级为 plugin pipeline</p></div><button class="btn primary" type="button">新建流程</button></div>
+              <div class="workflow-board">
+                <article class="workflow-card active"><strong>自媒体周更</strong><span>Discovery → Generate → Critique → Handoff</span><div class="bar-chart"><i></i><i></i><i></i><i></i></div></article>
+                <article class="workflow-card"><strong>编码需求实现</strong><span>Plan → Patch → Test → Review</span><div class="bar-chart"><i></i><i></i><i></i></div></article>
+                <article class="workflow-card"><strong>运营日报</strong><span>Schedule → Fetch → Summarize → Sync</span><div class="bar-chart"><i></i><i></i><i></i><i></i><i></i></div></article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="assets" aria-label="资产">
+            <div class="card">
+              <div class="card-head"><div><h2>资产库</h2><p>所有产物按项目、平台、版本和来源归档</p></div><button class="btn" type="button">批量导出</button></div>
+              <div class="table asset-table">
+                <div class="table-row table-head"><span>文件</span><span>类型</span><span>来源</span><span>更新时间</span></div>
+                <div class="table-row"><span><strong>AI Agent 工作流正文.md</strong><small>2 条知识引用</small></span><span class="file-type md">MD</span><span>文案 Agent</span><span>2 分钟前</span></div>
+                <div class="table-row"><span><strong>公众号封面 16-9.png</strong><small>BRAND.md v3</small></span><span class="file-type png">PNG</span><span>设计 Agent</span><span>8 分钟前</span></div>
+                <div class="table-row"><span><strong>发布包.zip</strong><small>含正文、标题、封面、标签</small></span><span class="file-type zip">ZIP</span><span>发布 Agent</span><span>23 分钟前</span></div>
+                <div class="table-row"><span><strong>capability-gate.diff</strong><small>代码变更</small></span><span class="file-type diff">DIFF</span><span>Codex</span><span>1 小时前</span></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="settings" aria-label="设置">
+            <div class="two-col">
+              <section class="card">
+                <div class="card-head tight"><div><h2>模型与 Runtime</h2><p>检测本机 CLI 与 worker 状态</p></div></div>
+                <div class="settings-list">
+                  <div><span>Codex CLI</span><strong>已连接</strong><button class="switch on" type="button" aria-label="Codex CLI 启用状态"></button></div>
+                  <div><span>OpenCode</span><strong>本地配置</strong><button class="switch on" type="button" aria-label="OpenCode 启用状态"></button></div>
+                  <div><span>GenericAgent Worker</span><strong>127.0.0.1:3917</strong><button class="switch" type="button" aria-label="GenericAgent Worker 启用状态"></button></div>
+                </div>
+              </section>
+              <section class="card">
+                <div class="card-head tight"><div><h2>安全策略</h2><p>默认协作模式，高风险动作逐次确认</p></div></div>
+                <div class="radio-group" role="radiogroup" aria-label="安全策略">
+                  <label><input type="radio" name="policy"> 自动化</label>
+                  <label><input type="radio" name="policy" checked> 协作</label>
+                  <label><input type="radio" name="policy"> 保守</label>
+                </div>
+                <div class="settings-list">
+                  <div><span>插件安装</span><strong>需要确认</strong></div>
+                  <div><span>真实账号发布</span><strong>禁止自动提交</strong></div>
+                  <div><span>Secret 注入</span><strong>仅运行时</strong></div>
+                </div>
+              </section>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div class="drawer-backdrop" data-close-drawer></div>
+    <aside class="drawer" aria-label="审批详情" aria-hidden="true">
+      <div class="drawer-head">
+        <div><h2>审批请求</h2><p>浏览器写入草稿箱</p></div>
+        <button class="icon-btn" type="button" data-close-drawer aria-label="关闭审批抽屉">×</button>
+      </div>
+      <div class="risk-panel">
+        <span class="tag warning">中风险</span>
+        <h3>发布 Agent 请求浏览器输入</h3>
+        <p>目标：微信公众平台草稿箱。动作：填入标题、正文和封面，不提交发布。</p>
+      </div>
+      <dl class="detail-list">
+        <div><dt>来源 Agent</dt><dd>发布 Agent</dd></div>
+        <div><dt>来源 Plugin</dt><dd>自媒体周更</dd></div>
+        <div><dt>权限</dt><dd>browser:input · files:read</dd></div>
+        <div><dt>审计</dt><dd>将记录截图、DOM 摘要和输入参数</dd></div>
+      </dl>
+      <div class="drawer-actions">
+        <button class="btn" type="button" data-close-drawer>拒绝</button>
+        <button class="btn" type="button">编辑参数</button>
+        <button class="btn primary" type="button" data-close-drawer>允许本次</button>
+      </div>
+    </aside>
+
+    <div class="modal-backdrop" data-close-modal></div>
+    <section class="modal" aria-label="插件授权" aria-hidden="true">
+      <div class="modal-head">
+        <div><h2>启动插件：自媒体周更</h2><p>确认本次运行将使用的能力</p></div>
+        <button class="icon-btn" type="button" data-close-modal aria-label="关闭授权弹窗">×</button>
+      </div>
+      <div class="capability-list">
+        <label><input type="checkbox" checked> `network:read` 读取热榜与竞品页面</label>
+        <label><input type="checkbox" checked> `knowledge:read` 检索 BRAND.md / CONTENT.md / SOP</label>
+        <label><input type="checkbox" checked> `files:write` 写入 artifact project</label>
+        <label><input type="checkbox"> `browser:input` 写入公众号草稿箱</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" data-close-modal>取消</button>
+        <button class="btn primary" type="button" data-grant-plugin>授权并启动</button>
+      </div>
+    </section>
+
+    <div class="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

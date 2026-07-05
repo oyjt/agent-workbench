@@ -60,7 +60,7 @@ pnpm package      # 构建并打包本地 release
 
 ```text
 agent-workbench/
-  docs/            产品、需求、架构、设计和技术文档
+  docs/            产品、需求、设计、架构和技术文档
   plugins/         Workflow Plugin 示例
   scripts/         本地打包脚本
   server/          本地 API、SQLite、SSE 和静态服务
@@ -73,8 +73,9 @@ agent-workbench/
 - [文档目录](docs/README.md)
 - [产品概览](docs/product/product-brief.md)
 - [需求说明](docs/product/requirements.md)
-- [架构方案](docs/product/architecture.md)
-- [设计规范](docs/product/design-guidelines.md)
+- [完整 PRD](docs/product/prd.md)
+- [架构文档](docs/architecture/architecture.md)
+- [设计文档](docs/design/design-brief.md)
 - [后端 API](docs/technical/backend-api.md)
 
 ## 安全边界
