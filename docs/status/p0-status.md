@@ -38,6 +38,6 @@ pnpm build
 
 - 当前 Runtime Adapter 是可验证闭环，不是完整的模型执行调度器。
 - MCP 调用是模拟结果，后续 P1 再接真实 MCP client。
-- Artifact Studio 在 P0 仍是前端预览；P1 已补充 artifact 持久化，见 `docs/p1-status.md`。
+- Artifact Studio 在 P0 仍是前端预览；P1 已补充 artifact 持久化，见 `p1-status.md`。
 - Workflow DAG 在 P0 已有前端模型和预览；P1 已补充工作流持久化，导入导出和从步骤重跑仍待后续实现。
 - Secret 管理、用户体系、权限隔离、远程部署不在 P0。
