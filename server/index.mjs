@@ -1510,7 +1510,7 @@ function workflowToYaml(workflow) {
     lines.push(`    task: ${quoteYaml(step.task)}`);
     if (step.output) lines.push(`    output: ${quoteYaml(step.output)}`);
     if (step.type) lines.push(`    type: ${quoteYaml(step.type)}`);
-    lines.push("    dependsOn:");
+    lines.push("    depends_on:");
     if (step.dependsOn.length === 0) {
       lines.push("      []");
     } else {
@@ -1570,7 +1570,7 @@ function parseWorkflowYaml(yaml) {
       continue;
     }
     if (!currentStep) continue;
-    if (trimmed === "dependsOn:") {
+    if (trimmed === "dependsOn:" || trimmed === "depends_on:") {
       dependsOn = true;
       currentStep.dependsOn = [];
       continue;

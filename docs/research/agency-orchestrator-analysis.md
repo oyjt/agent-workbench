@@ -16,6 +16,16 @@
 
 ## 可借鉴点
 
+### 0. Studio 工作台的信息架构
+
+它的 Web Studio 不是单纯的“流程图编辑器”，而是围绕真实执行过程组织成三个中心：
+
+- Workflows：模板卡片、搜索过滤、输入表单、运行面板、结果视图、终端视图、YAML 预览
+- Roles：角色库、分类筛选、角色详情、单角色流式对话
+- Runs：运行历史、步骤详情、耗时统计、从某一步恢复或返工
+
+这对当前项目很有价值，因为 Agent Workbench 也需要同时服务“配置、运行、介入、复盘”。因此工作流页不应只展示 DAG，还要提供一个运行控制台，把步骤状态、产物结果、原始日志和 YAML 放在同一个操作面。
+
 ### 1. 一句话自动编排
 
 `ao compose "..." --run` 的体验非常适合当前项目的入口层。用户不必先选择 Agent、Skill、MCP、CLI，而是先描述目标，再由系统生成一个可编辑的工作流草案。
@@ -64,6 +74,37 @@
 - 当前工作流页 provider 选项加入 `codex-cli`、`claude-code`、`deepseek`、`ollama`
 - 后续应把 provider 作为 Runtime Adapter 的一种，而不是只作为模型配置
 
+### 6. 结构化事件流与原始终端双视图
+
+Web Studio 的后端会把 CLI stdout/stderr 解析成结构化事件，例如 `step-start`、`step-content`、`step-done`、`workflow-summary`、`await-input`，同时保留原始终端输出。这种设计值得采用：
+
+- 前端用结构化事件驱动步骤卡片、进度条和人工输入弹窗
+- 调试时仍能看到原始 CLI 输出
+- 产物、历史和回放都可以复用同一套 run event
+
+当前项目已经有 `run_events` 和静态事件模拟，后续应把 workflow runtime 接到同一条事件流上。
+
+### 7. YAML 与画布双向转换
+
+`src/canvas/graph.ts` 的关键思路是：节点 `data` 保留完整 step 原始对象，画布只重算 `depends_on` 和 `meta.layout`。这可以避免图形编辑器来回保存时丢失字段。
+
+当前项目后续做可视化编排时，应保持这个原则：
+
+- YAML 是可移植合同
+- 图形画布只是编辑视图
+- 坐标等 UI 信息进入 `meta.layout`
+- 未识别字段原样保留
+
+### 8. 安全与人工介入
+
+Web 服务中对浏览器运行设置了类似 `AO_NO_AT_FILE` 的保护，避免网页请求读取本机任意文件；`human_input` / `approval` 节点会通过 `await-input` 事件要求前端介入。
+
+这与当前项目的 Capability Gate 和审批队列一致。后续真实执行时应继续遵循：
+
+- 高风险 MCP / CLI 调用进入审批
+- human input 节点必须暂停等待用户输入
+- 本地文件、Secret、真实账号发布都要有范围边界
+
 ## 暂不直接采用
 
 - 不直接复制它的工作流执行引擎：当前项目仍以 Workbench 为中心，Runtime Adapter 负责执行。
@@ -79,11 +120,16 @@
 - 新增内置工作流模板
 - 新增团队 Loadout
 - 新增 Resume / Feedback 返工入口
+- 新增运行控制台：步骤进度条、结果视图、终端视图、YAML 视图
+- 支持在结果视图中选中步骤、查看返工影响范围、从单个步骤重跑
+- 前端和本地 API 的 YAML 导入导出兼容 `depends_on`，同时保留旧 `dependsOn` 导入能力
 
 ## 后续迭代建议
 
-1. 增加 `workflow.yaml` 导入/导出。
-2. 将 `WorkflowPlan` 持久化到本地数据库。
-3. 将 DAG step 与 Agent、Skill、MCP、CLI、Knowledge Scope 建立绑定。
-4. 将 approval / human_input 节点接入真实审批队列。
-5. 将运行结果写入 Artifact Studio，并支持从某个 step 返工。
+1. 将运行控制台接入真实 SSE / run events。
+2. 增加工作流模板搜索、分类和最近运行区。
+3. 将 `WorkflowPlan` 持久化到本地数据库。
+4. 将 DAG step 与 Agent、Skill、MCP、CLI、Knowledge Scope 建立绑定。
+5. 将 approval / human_input 节点接入真实审批队列。
+6. 将运行结果写入 Artifact Studio，并支持从某个 step 返工。
+7. 增加 YAML / 画布双向编辑，保存时保留未知字段和 `meta.layout`。

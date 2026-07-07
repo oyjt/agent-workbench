@@ -47,6 +47,12 @@ mindmap
       健康检查
       权限审计
     Workflows
+      一句话自动编排
+      DAG 预览
+      运行控制台
+      终端视图
+      YAML 导入导出
+      Resume Feedback
       自媒体流程
       编码流程
       运营日报
@@ -102,6 +108,7 @@ erDiagram
   AGENT_TEAM ||--o{ TEAM_MEMBER : contains
   AGENT ||--o{ TEAM_MEMBER : joins
   TASK ||--o{ RUN_EVENT : emits
+  TASK ||--o{ WORKFLOW_STEP : executes
   TASK ||--o{ APPROVAL_REQUEST : requires
   TASK ||--o{ ARTIFACT : produces
   ARTIFACT ||--o{ ARTIFACT_VERSION : versions

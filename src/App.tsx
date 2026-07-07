@@ -805,7 +805,7 @@ function serializeWorkflowYaml(plan: WorkflowPlan) {
     lines.push(`    task: ${JSON.stringify(step.task)}`);
     if (step.output) lines.push(`    output: ${JSON.stringify(step.output)}`);
     if (step.type) lines.push(`    type: ${JSON.stringify(step.type)}`);
-    lines.push("    dependsOn:");
+    lines.push("    depends_on:");
     if (step.dependsOn.length === 0) lines.push("      []");
     else step.dependsOn.forEach((dep) => lines.push(`      - ${JSON.stringify(dep)}`));
   }
@@ -862,7 +862,7 @@ function parseWorkflowYaml(yaml: string): WorkflowPlan {
       continue;
     }
     if (!currentStep) continue;
-    if (trimmed === "dependsOn:") {
+    if (trimmed === "dependsOn:" || trimmed === "depends_on:") {
       dependsOn = true;
       currentStep.dependsOn = [];
       continue;
@@ -2862,6 +2862,14 @@ function WorkflowsPage({
           <WorkflowDagPreview plan={activePlan} onSave={onSave} onRun={onRun} onExportYaml={onExportYaml} />
         </Col>
       </Row>
+      <WorkflowStudioPanel
+        plan={activePlan}
+        rerunStep={rerunStep}
+        feedback={feedback}
+        onSelectStep={setRerunStep}
+        onRun={onRun}
+        onExportYaml={onExportYaml}
+      />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={15}>
           <Card title="内置工作流模板">
@@ -2951,6 +2959,134 @@ function WorkflowsPage({
         </Row>
       </Card>
     </Space>
+  );
+}
+
+function WorkflowStudioPanel({
+  plan,
+  rerunStep,
+  feedback,
+  onSelectStep,
+  onRun,
+  onExportYaml,
+}: {
+  plan: WorkflowPlan;
+  rerunStep: string;
+  feedback: string;
+  onSelectStep: (stepId: string) => void;
+  onRun: (plan: WorkflowPlan, options?: { fromStepId?: string; feedback?: string }) => void | Promise<void>;
+  onExportYaml: (plan: WorkflowPlan) => void | Promise<void>;
+}) {
+  const levels = buildWorkflowLevels(plan.steps);
+  const yaml = serializeWorkflowYaml(plan);
+  const gateCount = plan.steps.filter((step) => step.type === "approval" || step.type === "human_input").length;
+  const selectedAffectedSteps = rerunStep ? affectedWorkflowSteps(plan.steps, rerunStep).map((step) => step.id) : [];
+  const readyPercent = Math.round((plan.steps.filter((step) => step.dependsOn.length === 0).length / Math.max(plan.steps.length, 1)) * 100);
+  const terminalPreview = [
+    `$ ao run ${plan.key}.workflow.yml --provider ${plan.provider} --concurrency ${plan.concurrency}`,
+    ...levels.flatMap((level, levelIndex) => [
+      `# layer ${levelIndex + 1}: ${level.map((step) => step.id).join(", ")}`,
+      ...level.map((step) => `[queued] ${step.id} role=${step.role}${step.output ? ` output=${step.output}` : ""}`),
+    ]),
+    rerunStep ? `$ ao run ${plan.key}.workflow.yml --from ${rerunStep}` : "",
+    feedback.trim() ? `feedback: ${feedback.trim()}` : "",
+  ].filter(Boolean).join("\n");
+
+  return (
+    <Card
+      className="workflow-console-card"
+      title="运行控制台"
+      extra={
+        <Space wrap>
+          <Button size="small" onClick={() => void onExportYaml(plan)}>导出 YAML</Button>
+          <Button size="small" onClick={() => void onRun(plan, { fromStepId: rerunStep })}>从选中步骤重跑</Button>
+          <Button size="small" type="primary" onClick={() => void onRun(plan)}>运行</Button>
+        </Space>
+      }
+    >
+      <Row gutter={[16, 16]} align="middle">
+        <Col xs={24} lg={17}>
+          <div className="workflow-progress-strip" aria-label="workflow steps">
+            {levels.flatMap((level, levelIndex) => level.map((step) => {
+              const statusClass = step.id === rerunStep
+                ? "is-selected"
+                : step.type === "approval" || step.type === "human_input"
+                  ? "is-gate"
+                  : step.dependsOn.length === 0
+                    ? "is-ready"
+                    : "is-queued";
+              return (
+                <button
+                  className={`workflow-progress-chip ${statusClass}`}
+                  key={step.id}
+                  type="button"
+                  onClick={() => onSelectStep(step.id)}
+                >
+                  <span>Layer {levelIndex + 1}</span>
+                  <strong>{step.id}</strong>
+                </button>
+              );
+            }))}
+          </div>
+        </Col>
+        <Col xs={24} lg={7}>
+          <Row gutter={12}>
+            <Col span={8}><Statistic title="Steps" value={plan.steps.length} /></Col>
+            <Col span={8}><Statistic title="Layers" value={levels.length} /></Col>
+            <Col span={8}><Statistic title="Gates" value={gateCount} /></Col>
+          </Row>
+          <Progress percent={readyPercent} showInfo={false} size="small" className="workflow-console-progress" />
+        </Col>
+      </Row>
+      <Tabs
+        className="workflow-console-tabs"
+        items={[
+          {
+            key: "results",
+            label: "结果视图",
+            children: (
+              <div className="workflow-result-list">
+                {plan.steps.map((step, index) => {
+                  const isAffected = selectedAffectedSteps.includes(step.id);
+                  return (
+                    <div className={`workflow-result-step ${isAffected ? "is-affected" : ""}`} key={step.id}>
+                      <Flex justify="space-between" align="flex-start" gap={12} wrap>
+                        <Space wrap>
+                          <Tag>{index + 1}/{plan.steps.length}</Tag>
+                          <Text strong>{step.id}</Text>
+                          {step.type ? <Tag color={step.type === "approval" ? "warning" : "purple"}>{step.type}</Tag> : <Tag color="success">normal</Tag>}
+                        </Space>
+                        <Space wrap>
+                          <Button size="small" onClick={() => onSelectStep(step.id)}>选中</Button>
+                          <Button size="small" onClick={() => void onRun(plan, { fromStepId: step.id })}>从此步重跑</Button>
+                        </Space>
+                      </Flex>
+                      <Text type="secondary" className="row-meta">{step.role}</Text>
+                      <Paragraph className="compact-copy">{step.task}</Paragraph>
+                      <Space wrap>
+                        {step.output ? <Tag color="blue">output: {step.output}</Tag> : null}
+                        {step.dependsOn.length > 0 ? <Tag>depends_on: {step.dependsOn.join(", ")}</Tag> : <Tag color="green">root step</Tag>}
+                        {isAffected ? <Tag color="processing">rerun scope</Tag> : null}
+                      </Space>
+                    </div>
+                  );
+                })}
+              </div>
+            ),
+          },
+          {
+            key: "terminal",
+            label: "终端视图",
+            children: <pre className="workflow-terminal-preview">{terminalPreview}</pre>,
+          },
+          {
+            key: "yaml",
+            label: "YAML",
+            children: <pre className="workflow-yaml-preview">{yaml}</pre>,
+          },
+        ]}
+      />
+    </Card>
   );
 }
 
