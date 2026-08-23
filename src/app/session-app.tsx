@@ -1,7 +1,7 @@
-import { CheckOutlined, CloseOutlined, CodeOutlined, FileTextOutlined, FolderOpenOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PlusOutlined, SearchOutlined, SendOutlined, SettingOutlined, ToolOutlined } from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, CodeOutlined, DeleteOutlined, FileTextOutlined, FolderOpenOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PlusOutlined, SearchOutlined, SendOutlined, SettingOutlined, ToolOutlined } from "@ant-design/icons";
 import { Badge, Button, Divider, Empty, Input, Modal, Segmented, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography, message } from "antd";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { appendRunEvent, createApiTask, getApiArtifactContent, listApiAgents, listApiAgentTeams, listApiApprovals, listApiArtifacts, listApiConnectors, listApiKnowledgeItems, listApiRunEvents, listApiSecrets, listApiTasks, listApiWorkflows, respondApiApproval, scanApiPlugins, scanApiSkills, startApiTask } from "../api";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { appendRunEvent, createApiTask, deleteApiTask, getApiArtifactContent, listApiAgents, listApiAgentTeams, listApiApprovals, listApiArtifacts, listApiConnectors, listApiKnowledgeItems, listApiRunEvents, listApiSecrets, listApiTasks, listApiWorkflows, respondApiApproval, scanApiPlugins, scanApiSkills, startApiTask } from "../api";
 import type { ApiAgent, ApiAgentTeam, ApiApproval, ApiArtifact, ApiRunEvent, ApiTask } from "../api";
 import type { SettingsCatalog } from "./settings-drawer";
 
@@ -36,6 +36,7 @@ export default function SessionApp() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 760);
   const [detailTab, setDetailTab] = useState<DetailTab>("activity");
   const [artifactPreview, setArtifactPreview] = useState<{ artifact: ApiArtifact; content: string }>();
+  const conversationRef = useRef<HTMLElement>(null);
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
   const filteredTasks = useMemo(() => { const value = query.trim().toLowerCase(); return value ? tasks.filter((task) => `${task.title} ${task.prompt}`.toLowerCase().includes(value)) : tasks; }, [query, tasks]);
@@ -72,6 +73,7 @@ export default function SessionApp() {
     source.onmessage = (event) => { try { const next = JSON.parse(event.data) as ApiRunEvent; setEvents((current) => current.some((item) => item.id === next.id) ? current : [...current, next]); } catch { setStreamConnected(false); } };
     return () => { active = false; source.close(); };
   }, [connected, selectedTask?.runId]);
+  useEffect(() => { conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" }); }, [events, selectedTaskId]);
 
   async function createSession() {
     const prompt = composer.trim(); if (!prompt || submitting) return;
@@ -89,6 +91,26 @@ export default function SessionApp() {
     setSubmitting(true);
     try { const { event } = await appendRunEvent(selectedTask.runId, "user.message", { text }); setEvents((current) => current.some((item) => item.id === event.id) ? current : [...current, event]); setComposer(""); }
     catch { messageApi.error("消息未写入当前会话。"); } finally { setSubmitting(false); }
+  }
+
+  function confirmDeleteSession(task: ApiTask) {
+    Modal.confirm({
+      title: "删除会话？",
+      content: `“${task.title}”的消息和运行记录将被永久删除。`,
+      okText: "删除",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      async onOk() {
+        try {
+          await deleteApiTask(task.id);
+          setTasks((current) => current.filter((item) => item.id !== task.id));
+          setApprovals((current) => current.filter((item) => item.taskId !== task.id));
+          setArtifacts((current) => current.filter((item) => item.taskId !== task.id && item.runId !== task.runId));
+          setSelectedTaskId((current) => current === task.id ? undefined : current);
+          messageApi.success("会话已删除");
+        } catch { messageApi.error("会话删除失败。"); }
+      },
+    });
   }
 
   async function respond(approval: ApiApproval, decision: "allow_once" | "deny") {
@@ -130,13 +152,13 @@ export default function SessionApp() {
       <div className="workspace-label"><Text type="secondary">工作区</Text></div>
       <button className="workspace-row active" type="button" aria-current="page"><FolderOpenOutlined /><span>agent-workbench</span><Badge status={connected ? "success" : "error"} /></button>
       <Input prefix={<SearchOutlined />} value={query} onChange={(event) => setQuery(event.target.value)} allowClear placeholder="搜索会话" aria-label="搜索会话" />
-      <div className="session-list" role="list" aria-label="会话列表">{loading ? <Skeleton active paragraph={{ rows: 5 }} title={false} /> : filteredTasks.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" /> : filteredTasks.map((task) => <button key={task.id} type="button" role="listitem" className={`session-row ${task.id === selectedTaskId ? "selected" : ""}`} onClick={() => { setSelectedTaskId(task.id); if (window.innerWidth <= 760) setSidebarOpen(false); }}><span className="session-row-title">{task.title}</span><span className="session-row-meta"><Badge status={badgeStatus(task.status)} />{statusMeta[task.status]?.label ?? task.status}<time>{shortTime(task.updatedAt)}</time></span></button>)}</div>
+      <div className="session-list" role="list" aria-label="会话列表">{loading ? <Skeleton active paragraph={{ rows: 5 }} title={false} /> : filteredTasks.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" /> : filteredTasks.map((task) => <div key={task.id} role="listitem" className={`session-row ${task.id === selectedTaskId ? "selected" : ""}`}><button className="session-row-select" type="button" onClick={() => { setSelectedTaskId(task.id); if (window.innerWidth <= 760) setSidebarOpen(false); }}><span className="session-row-title">{task.title}</span><span className="session-row-meta"><Badge status={badgeStatus(task.status)} />{statusMeta[task.status]?.label ?? task.status}<time>{shortTime(task.updatedAt)}</time></span></button><Tooltip title="删除会话"><Button className="session-delete" type="text" danger icon={<DeleteOutlined />} aria-label={`删除会话：${task.title}`} onClick={() => confirmDeleteSession(task)} /></Tooltip></div>)}</div>
       <button type="button" className="settings-row" onClick={() => void openSettings()}><SettingOutlined /><span>设置</span>{pendingCount > 0 && <Badge count={pendingCount} />}</button>
     </aside>
 
     <main className="session-main" id="session-main" inert={sidebarModal || detailsModal ? true : undefined}>
       <header className="session-header"><div className="mobile-panel-actions">{!sidebarOpen && <Button id="open-sidebar" type="text" icon={<MenuUnfoldOutlined />} aria-label="打开会话列表" onClick={openSidebar} />}</div><div className="session-title-block"><Title level={4}>{selectedTask?.title ?? "新建会话"}</Title><Space size={6} role="status"><span className={`connection-dot ${connected ? "online" : "offline"}`} aria-hidden="true" /><Text type="secondary">{connectionLabel}</Text></Space></div><Space>{selectedTask && <Tag className={`task-status task-status-${selectedTask.status}`}>{statusMeta[selectedTask.status]?.label ?? selectedTask.status}</Tag>}{!detailsOpen && <Button id="open-details" type="text" icon={<ToolOutlined />} aria-label="打开详情" onClick={openDetails} />}</Space></header>
-      {!connected ? <ConnectionState onRetry={() => void loadWorkspace()} /> : selectedTask ? <section className="conversation" aria-label="会话内容"><div className="prompt-message"><span className="message-author">你</span><Paragraph>{selectedTask.prompt}</Paragraph></div><div className="execution-track">{events.length === 0 ? <div className="empty-track"><Text type="secondary">等待运行事件…</Text></div> : conversationEvents(events).map((event) => <EventMessage key={event.id} event={event} />)}{selectedApprovals.map((approval) => <ApprovalMessage key={approval.id} approval={approval} onRespond={respond} />)}</div></section> : <Welcome onExample={setComposer} />}
+      {!connected ? <ConnectionState onRetry={() => void loadWorkspace()} /> : selectedTask ? <section ref={conversationRef} className="conversation" aria-label="会话内容"><article className="chat-message user-message"><div className="chat-bubble"><span className="message-author">你</span><Paragraph>{selectedTask.prompt}</Paragraph></div></article><div className="execution-track">{events.length === 0 ? <div className="empty-track"><span className="streaming-pulse" aria-hidden="true" /><Text type="secondary">正在准备运行环境…</Text></div> : conversationEvents(events).map((event) => <EventMessage key={event.id} event={event} />)}{selectedApprovals.map((approval) => <ApprovalMessage key={approval.id} approval={approval} onRespond={respond} />)}</div></section> : <Welcome onExample={setComposer} />}
       <div className="composer-wrap"><div className="composer"><Input.TextArea autoSize={{ minRows: 2, maxRows: 7 }} value={composer} onChange={(event) => setComposer(event.target.value)} placeholder={selectedTask ? "继续当前会话…" : "描述你想完成的任务"} onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); void (selectedTask ? sendFollowUp() : createSession()); } }} aria-label="会话消息" /><div className="composer-controls"><Space wrap><Select variant="borderless" value={targetId} onChange={setTargetId} options={targetOptions(agents, teams)} aria-label="选择智能体" /><Segmented size="small" value={accessMode} onChange={(value) => setAccessMode(value as typeof accessMode)} options={[{ label: "可写工作区", value: "collaborative" }, { label: "操作前询问", value: "strict" }]} /></Space><Button className="send-button" type="primary" shape="circle" icon={<SendOutlined />} loading={submitting} disabled={!composer.trim() || !connected} aria-label={selectedTask ? "发送消息" : "启动会话"} onClick={() => void (selectedTask ? sendFollowUp() : createSession())} /></div></div><Text type="secondary" className="composer-hint">Enter 发送 · Shift + Enter 换行 · 高风险能力会在消息流中请求审批</Text></div>
     </main>
 
@@ -146,7 +168,7 @@ export default function SessionApp() {
   </div>;
 }
 
-function EventMessage({ event }: { event: ApiRunEvent }) { const payload = event.payload && typeof event.payload === "object" ? event.payload as Record<string, unknown> : {}; const copy = String(payload.text ?? payload.summary ?? payload.message ?? humanEvent(event.type)); const isTool = /cli|mcp|capability|tool|adapter/.test(event.type); const isUser = event.type === "user.message"; const isAssistant = /message\.delta|assistant\.(delta|message|error)|runtime\.unconfigured/.test(event.type); return <article className={`event-message ${isTool ? "tool-event" : ""} ${isUser ? "user-event" : ""} ${isAssistant ? "assistant-event" : ""}`} aria-live={event.type === "assistant.delta" ? "polite" : undefined}><span className="track-node" aria-hidden="true">{isTool ? <CodeOutlined /> : null}</span><div><div className="event-heading"><Text strong>{isUser ? "你" : isAssistant ? "智能体" : humanEvent(event.type)}</Text><time>{shortTime(event.createdAt)}</time></div><Paragraph>{copy}</Paragraph>{Object.keys(payload).length > 0 && isTool && <details><summary>查看详情</summary><pre>{JSON.stringify(payload, null, 2)}</pre></details>}</div></article>; }
+function EventMessage({ event }: { event: ApiRunEvent }) { const payload = event.payload && typeof event.payload === "object" ? event.payload as Record<string, unknown> : {}; const copy = String(payload.text ?? payload.summary ?? payload.message ?? humanEvent(event.type)); const isTool = /cli|mcp|capability|tool|adapter/.test(event.type); const isUser = event.type === "user.message"; const isAssistant = /message\.delta|assistant\.(delta|message|error)|runtime\.unconfigured/.test(event.type); const isStreaming = event.type === "assistant.delta"; if (isUser) return <article className="chat-message user-message"><div className="chat-bubble"><div className="event-heading"><Text strong>你</Text><time>{shortTime(event.createdAt)}</time></div><Paragraph>{copy}</Paragraph></div></article>; if (isAssistant) return <article className={`chat-message assistant-message ${isStreaming ? "is-streaming" : ""}`} aria-live={isStreaming ? "polite" : undefined}><span className="assistant-avatar" aria-hidden="true">A</span><div className="assistant-content"><div className="event-heading"><Text strong>智能体</Text><time>{shortTime(event.createdAt)}</time></div><Paragraph>{copy}</Paragraph></div></article>; return <article className={`event-message system-event ${isTool ? "tool-event" : ""}`}><span className="track-node" aria-hidden="true">{isTool ? <CodeOutlined /> : null}</span><div><div className="event-heading"><Text strong>{humanEvent(event.type)}</Text><time>{shortTime(event.createdAt)}</time></div>{copy !== humanEvent(event.type) && <Paragraph>{copy}</Paragraph>}{Object.keys(payload).length > 0 && isTool && <details><summary>查看运行详情</summary><pre>{JSON.stringify(payload, null, 2)}</pre></details>}</div></article>; }
 function ApprovalMessage({ approval, onRespond }: { approval: ApiApproval; onRespond: (approval: ApiApproval, decision: "allow_once" | "deny") => void }) { const risk = { low: "低风险", medium: "中风险", high: "高风险" }[approval.risk]; return <article className="event-message approval-message"><span className="track-node" aria-hidden="true"><ToolOutlined /></span><div><div className="event-heading"><Text strong>需要审批</Text><Tag className={`risk-tag risk-${approval.risk}`}>{risk}</Tag></div><Paragraph>{approval.reason}</Paragraph><Space><Button icon={<CloseOutlined />} onClick={() => onRespond(approval, "deny")}>拒绝</Button><Button type="primary" icon={<CheckOutlined />} onClick={() => onRespond(approval, "allow_once")}>仅允许一次</Button></Space></div></article>; }
 function ConnectionState({ onRetry }: { onRetry: () => void }) { return <div className="center-state"><div className="state-mark"><CloseOutlined /></div><Title level={3}>本地 Web 服务未运行</Title><Paragraph type="secondary">请用 <code>pnpm web</code> 启动构建后的应用。浏览器静态回退已移除，所有会话统一使用 SQLite 和同一条 Harness 流程。</Paragraph><Button type="primary" onClick={onRetry}>重试</Button></div>; }
 function Welcome({ onExample }: { onExample: (value: string) => void }) { return <div className="welcome"><div className="welcome-mark">A</div><Title>今天想完成什么？</Title><Paragraph type="secondary">从一个目标开始，智能体、工具、审批和产出文件都会保留在同一会话中。</Paragraph><div className="example-grid">{["总结这个代码仓库并说明主要模块。", "审查当前改动并运行相关测试。", "根据项目知识库创建一份内容简报。"].map((text) => <button type="button" key={text} onClick={() => onExample(text)}>{text}</button>)}</div></div>; }

@@ -39,7 +39,7 @@ const db = new DatabaseSync(dbPath, { timeout: 5000 });
 initializeDatabase(db);
 
 const {
-  insertTask, insertRun, insertEvent, listTasks, listEvents, getRun, getTask, getLatestRunByTask,
+  insertTask, insertRun, insertEvent, listTasks, deleteTask, deleteApprovalsByTask, deleteArtifactsByTask, listEvents, getRun, getTask, getLatestRunByTask,
   getPendingApprovalByTask, updateTaskStatusStatement, updateRunStatusStatement, insertAgent, listAgents,
   updateAgentStatusStatement, insertKnowledgeItem, listKnowledgeItems, insertConnector, listConnectors,
   updateConnectorStatusStatement, getConnector, getTeam, insertApproval, listApprovals, listApprovalsByStatus,
@@ -127,6 +127,27 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const result = createTask(body);
       sendJson(response, 201, result);
+      return;
+    }
+
+    const taskDeleteMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
+    if (request.method === "DELETE" && taskDeleteMatch) {
+      const taskId = taskDeleteMatch[1];
+      if (!getTask.get(taskId)) {
+        sendJson(response, 404, { error: "task_not_found" });
+        return;
+      }
+      db.exec("BEGIN");
+      try {
+        deleteApprovalsByTask.run(taskId);
+        deleteArtifactsByTask.run(taskId);
+        deleteTask.run(taskId);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      sendJson(response, 200, { ok: true });
       return;
     }
 

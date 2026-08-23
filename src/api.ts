@@ -215,6 +215,10 @@ export async function listApiTasks() {
   return requestJson<{ tasks: ApiTask[] }>("/api/tasks");
 }
 
+export function deleteApiTask(taskId: string) {
+  return requestJson<{ ok: boolean }>(`/api/tasks/${taskId}`, { method: "DELETE" });
+}
+
 export async function listApiAgents() {
   return requestJson<{ agents: ApiAgent[] }>("/api/agents");
 }

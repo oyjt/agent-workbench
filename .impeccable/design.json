@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-24T12:00:00+08:00",
+  "generatedAt": "2026-08-24T20:00:00+08:00",
   "title": "Design System: Agent Workbench",
   "extensions": {
     "colorMeta": {
@@ -60,9 +60,9 @@
       "name": "Selected Session Row",
       "kind": "nav",
       "refersTo": "selected-row",
-      "description": "以浅蓝底和细边框标记当前会话。",
-      "html": "<button class=\"ds-session-row\"><strong>审查当前项目</strong><small>运行中 · 14:32</small></button>",
-      "css": ".ds-session-row{display:flex;width:260px;min-height:64px;flex-direction:column;gap:7px;padding:10px;color:#172033;background:#edf3ff;border:1px solid #c9d8f7;border-radius:10px;text-align:left;font:14px system-ui}.ds-session-row small{color:#5b6678;font-size:12px}.ds-session-row:hover{background:#e4edff}.ds-session-row:focus-visible{outline:2px solid #1e40af;outline-offset:2px}"
+      "description": "以浅蓝底和细边框标记当前会话，并为删除操作保留独立列。",
+      "html": "<div class=\"ds-session-row\"><button class=\"ds-session-select\"><strong>审查当前项目</strong><small>运行中 · 14:32</small></button><button class=\"ds-session-delete\" aria-label=\"删除会话\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5\"/></svg></button></div>",
+      "css": ".ds-session-row{display:grid;width:260px;min-height:64px;grid-template-columns:minmax(0,1fr) 44px;align-items:center;padding-right:4px;color:#172033;background:#edf3ff;border:1px solid #c9d8f7;border-radius:10px;font:14px system-ui}.ds-session-select{display:flex;min-width:0;min-height:62px;flex-direction:column;gap:7px;padding:10px;color:inherit;background:transparent;border:0;border-radius:8px;text-align:left}.ds-session-select small{overflow:hidden;color:#5b6678;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.ds-session-delete{display:grid;place-items:center;width:44px;height:44px;padding:0;color:#b42318;background:transparent;border:0;border-radius:8px}.ds-session-delete:hover{background:#fef3f2}.ds-session-delete svg{width:16px;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:1.8}.ds-session-row:hover{background:#e4edff}.ds-session-select:focus-visible,.ds-session-delete:focus-visible{outline:2px solid #1e40af;outline-offset:2px}"
     },
     {
       "name": "Tool Event Card",
@@ -78,7 +78,23 @@
       "refersTo": "card",
       "description": "与开放式智能体回复区分的用户会话气泡。",
       "html": "<article class=\"ds-user-message\"><strong>你</strong><p>继续优化当前设置页面。</p></article>",
-      "css": ".ds-user-message{width:320px;padding:12px 16px;color:#172033;background:#edf3ff;border-radius:16px 16px 4px 16px;font:14px/1.5 system-ui}.ds-user-message p{margin:5px 0 0}.ds-user-message:focus-within{outline:2px solid #1e40af;outline-offset:2px}"
+      "css": ".ds-user-message{width:320px;padding:13px 16px;color:#172033;background:#edf3ff;border:1px solid #c9d8f7;border-radius:16px 16px 4px 16px;font:14px/1.68 system-ui}.ds-user-message strong{color:#5b6678;font-size:12px}.ds-user-message p{margin:5px 0 0;color:#39465a}.ds-user-message:focus-within{outline:2px solid #1e40af;outline-offset:2px}"
+    },
+    {
+      "name": "Assistant Message",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "开放式智能体回复，使用紧凑品牌头像与受控阅读宽度。",
+      "html": "<article class=\"ds-assistant-message\"><span class=\"ds-assistant-avatar\">A</span><div><strong>智能体</strong><p>我会先检查项目结构，再完成相应修改。</p></div></article>",
+      "css": ".ds-assistant-message{display:flex;width:520px;align-items:flex-start;gap:12px;color:#172033;font:14px/1.68 system-ui}.ds-assistant-avatar{display:grid;flex:0 0 28px;place-items:center;width:28px;height:28px;color:#fff;background:#172033;border-radius:8px;font-size:12px;font-weight:700}.ds-assistant-message>div{max-width:460px;padding-top:2px}.ds-assistant-message strong{font-size:14px}.ds-assistant-message p{margin:5px 0 0;color:#39465a}"
+    },
+    {
+      "name": "Streaming Reply",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "流式生成中的回复使用低干扰光标，并尊重减少动态效果设置。",
+      "html": "<p class=\"ds-streaming-reply\">正在整理当前项目结构<span aria-hidden=\"true\"></span></p>",
+      "css": ".ds-streaming-reply{width:420px;color:#39465a;font:14px/1.68 system-ui}.ds-streaming-reply span{display:inline-block;width:6px;height:1em;margin-left:4px;vertical-align:-2px;background:#1e40af;border-radius:4px;animation:ds-stream-caret 900ms steps(1) infinite}@keyframes ds-stream-caret{50%{opacity:0}}@media(prefers-reduced-motion:reduce){.ds-streaming-reply span{animation:none}}"
     }
   ],
   "narrative": {
