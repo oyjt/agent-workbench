@@ -64,8 +64,15 @@ agent-workbench/
   plugins/         Workflow Plugin 示例
   scripts/         本地打包脚本
   server/          本地 API、SQLite、SSE 和静态服务
+    db/            SQLite prepared statements 与后续 repository 边界
+    harness/       Capability、Event Bus 与 Policy pipeline
+    plugins/       Runtime 与 Catalog capability providers
+    transport/     HTTP body、CORS response 与静态文件传输
   skills/          Skill 示例
   src/             React + Ant Design 前端
+    domain/        Workbench 领域模型
+    features/      Workflow 等页面领域逻辑
+    infrastructure/ API 映射与静态工作区持久化
 ```
 
 ## 文档
@@ -85,3 +92,7 @@ agent-workbench/
 - 中高风险 MCP / CLI 调用会进入审批队列。
 - Secret 管理只登记环境变量名，不保存真实密钥。
 - 静态本地模式的数据保存在当前浏览器，清缓存或换浏览器前请先导出工作区 JSON。
+
+## Harness 扩展
+
+后端通过轻量 Harness 注册 Capability。Runtime adapter 发现、Skill 扫描与 Workflow Plugin 扫描均已从单体服务器迁入 provider；Connector 使用可注册 provider registry，CLI/MCP 共用 Capability → Policy → Approval 管线，并支持审批后恢复执行。`server/index.mjs` 仅保留启动入口，`GET /api/extensions` 可查看当前 Capability 和 Runtime adapter 清单。

@@ -12,17 +12,27 @@ export function createRiskPolicy(options = {}) {
   };
 
   return {
-    decide(capability) {
+    decide(capability, context) {
+      if (context?.approvalGranted === true) return capabilityDecision.ALLOW;
       return decisions[capability.risk ?? "medium"] ?? capabilityDecision.ASK;
     },
   };
+}
+
+export class CapabilityApprovalRequired extends Error {
+  constructor(capabilityId, approval) {
+    super(`Capability approval required: ${capabilityId}`);
+    this.name = "CapabilityApprovalRequired";
+    this.capabilityId = capabilityId;
+    this.approval = approval;
+  }
 }
 
 export async function executeCapability({ registry, policy, capabilityId, input, context, requestApproval }) {
   const capability = registry.get(capabilityId);
   if (!capability) throw new Error(`Unknown capability: ${capabilityId}`);
 
-  const decision = policy.decide(capability);
+  const decision = policy.decide(capability, context);
   context?.emit?.("capability/requested", { capabilityId, decision });
 
   if (decision === capabilityDecision.DENY) {
@@ -35,8 +45,9 @@ export async function executeCapability({ registry, policy, capabilityId, input,
       throw new Error(`Capability requires approval: ${capabilityId}`);
     }
     context?.emit?.("capability/approval-required", { capabilityId });
-    const approved = await requestApproval(capability, input);
-    if (!approved) {
+    const approval = await requestApproval(capability, input);
+    if (approval?.pending) throw new CapabilityApprovalRequired(capabilityId, approval.approval);
+    if (!approval) {
       context?.emit?.("capability/denied", { capabilityId, reason: "approval-denied" });
       throw new Error(`Capability approval denied: ${capabilityId}`);
     }

@@ -14,7 +14,7 @@
     "package": "pnpm build && node scripts/package.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "tsc -b --pretty false",
-    "test": "node --test server/**/*.test.mjs",
+    "test": "node --experimental-strip-types --test server/**/*.test.mjs src/**/*.test.ts",
     "verify": "pnpm lint && pnpm test && pnpm build"
   },
   "dependencies": {

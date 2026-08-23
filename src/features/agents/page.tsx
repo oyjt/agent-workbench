@@ -1,0 +1,10 @@
+import { Button, Card, Col, Descriptions, Empty, Row, Space, Table, Tag, Typography } from "antd";
+import type { AgentRecord, AgentTeamRecord } from "../../domain/workbench";
+
+const { Text } = Typography;
+
+export function AgentsPage({ agents, teams, onCreateAgent, onCreateTeam }: { agents: AgentRecord[]; teams: AgentTeamRecord[]; onCreateAgent: () => void; onCreateTeam: () => void }) {
+  const names = new Map(agents.map((agent) => [agent.key, agent.name]));
+  return <Row gutter={[16, 16]}><Col xs={24} xl={15}><Card title="Agent 列表" extra={<Button type="primary" onClick={onCreateAgent}>创建 Agent</Button>}><Table rowKey="key" pagination={false} columns={[{ title: "名称", dataIndex: "name" }, { title: "Runtime", dataIndex: "runtime" }, { title: "模型", dataIndex: "model" }, { title: "能力", dataIndex: "capability" }, { title: "状态", dataIndex: "status", render: (value) => <Tag color={value === "运行中" ? "processing" : value === "禁用" ? "default" : "success"}>{value}</Tag> }]} dataSource={agents} expandable={{ expandedRowRender: (record) => <Descriptions column={1} size="small"><Descriptions.Item label="说明">{record.description}</Descriptions.Item><Descriptions.Item label="知识范围">{record.knowledgeScope}</Descriptions.Item><Descriptions.Item label="权限策略">{record.permissionProfile}</Descriptions.Item></Descriptions> }} /></Card></Col><Col xs={24} xl={9}><Card title="Agent Team" extra={<Button onClick={onCreateTeam}>创建 Team</Button>}>{teams.length ? <div className="list-panel">{teams.map((team) => <div className="list-row" key={team.key}><div><Text strong>{team.name}</Text><Text type="secondary" className="row-meta">{team.description || team.workflow}</Text><Space wrap className="row-meta"><Tag>{team.workflow}</Tag>{team.members.map((member) => <Tag key={`${team.key}_${member.agentId}_${member.role}`}>{member.role}: {names.get(member.agentId) ?? member.agentId}</Tag>)}</Space></div><Tag color={team.status === "运行中" ? "processing" : "success"}>{team.status}</Tag></div>)}</div> : <Empty description="暂无 Agent Team" />}</Card></Col></Row>;
+}
+

@@ -180,6 +180,8 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 - 增加单元测试基础。
 - 保持现有页面和 API 行为兼容。
 
+状态：已完成。前后端 contracts、Capability Registry、Event Bus、Policy pipeline 与可逆插件生命周期均已实现并覆盖测试。
+
 ### Phase 2 — 拆后端单体
 
 优先顺序：
@@ -192,6 +194,8 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 6. HTTP/SSE transport
 
 `server/index.mjs` 最终只做 composition root 和 server startup。
+
+状态：已完成。Runtime/Catalog provider、Connector provider registry、HTTP transport、SQLite schema、prepared statements、数据库行映射，以及 Run Event、Approval、Artifact services 均已迁出，`/api/extensions` 提供运行时观测。`server/index.mjs` 已收口为单行启动入口，依赖装配集中在 `server/application.mjs`。
 
 ### Phase 3 — 拆前端单体
 
@@ -206,6 +210,8 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 
 页面组件不直接实现 YAML parser、DAG 算法、API transport 和 local persistence。
 
+状态：已完成。领域类型、API DTO 映射、IndexedDB/localStorage 持久化、静态运行模拟、Workflow YAML 与 DAG 算法，以及 Agents、Skills、Plugins、Knowledge、Connectors、Creative、Assets、Settings、Workflows 页面和全部 Drawer/Modal overlay 已迁出 `App.tsx`。`App.tsx` 只保留应用状态编排、导航和 feature composition；迁出的页面使用动态 import 与统一 Suspense 边界生成独立构建 chunk。
+
 ### Phase 4 — Capability pipeline
 
 - CLI/MCP 统一注册成 capability。
@@ -213,6 +219,8 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 - `ask` 自动生成 ApprovalRequest。
 - approve 后恢复原 capability execution。
 - 所有执行结果写统一 run event。
+
+状态：已完成。Connector 调用统一经过风险 Policy；`ask` 决策会生成 ApprovalRequest 并在 provider 执行前暂停，同时持久化待执行 capability。审批通过后以一次性批准上下文重新进入同一 Policy 管线，执行可注册的 CLI/MCP provider 并持久化结果；低风险调用则直接执行。
 
 ### Phase 5 — Scope/Profile
 
@@ -233,3 +241,15 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 - Run event 可完整驱动运行控制台和审计视图。
 - 核心 registry、policy、workflow graph、serialization 有独立测试。
 - 静态本地模式仍可以复用同一领域 contracts，而不是复制第二套业务模型。
+
+## 完成审计（2026-08-24）
+
+- [x] `App.tsx` 仅保留应用状态、导航与 feature composition；主要领域算法、页面、overlay、DTO 和持久化已迁出。
+- [x] `server/index.mjs` 仅导入 composition/startup 模块。
+- [x] Runtime 通过 Harness plugin 注册，Connector 通过 `ConnectorProviderRegistry` 注册，无中心执行 switch。
+- [x] CLI/MCP 共用 Capability → Policy → Approval → Provider 管线，审批后可从持久化请求恢复执行。
+- [x] Run event 同时用于 SSE/JSON 回放、运行控制台、审批审计和产物事件。
+- [x] Registry、Policy、Connector provider、数据库 schema、Run Event、Approval、Artifact、Workflow graph 与 YAML serialization 均有独立测试。
+- [x] 静态模式从 `src/domain` contracts 和 `src/infrastructure/static-workspace.ts` 生成相同 Task/Artifact/RunEvent 模型。
+
+验证结果：`pnpm verify`、`pnpm db:init`、高风险 CLI 审批恢复 API 烟测和 `git diff --check` 均通过。
