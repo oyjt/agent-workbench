@@ -211,14 +211,6 @@ export async function startApiTask(taskId: string) {
   });
 }
 
-export async function updateApiTaskStatus(taskId: string, status: string) {
-  return requestJson<{ ok: boolean }>(`/api/tasks/${taskId}/status`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-}
-
 export async function listApiTasks() {
   return requestJson<{ tasks: ApiTask[] }>("/api/tasks");
 }
@@ -227,80 +219,28 @@ export async function listApiAgents() {
   return requestJson<{ agents: ApiAgent[] }>("/api/agents");
 }
 
-export async function createApiAgent(payload: {
-  name: string;
-  description: string;
-  runtime: string;
-  model: string;
-  systemPrompt: string;
-  skillIds: string[];
-  knowledgeScope: string;
-  permissionProfile: string;
-}) {
-  return requestJson<{ agent: ApiAgent }>("/api/agents", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+export function createApiAgent(payload: Pick<ApiAgent, "name" | "description" | "runtime" | "model" | "systemPrompt" | "skillIds" | "knowledgeScope" | "permissionProfile">) {
+  return postJson<{ agent: ApiAgent }>("/api/agents", payload);
 }
 
 export async function listApiKnowledgeItems() {
   return requestJson<{ knowledgeItems: ApiKnowledgeItem[] }>("/api/knowledge-items");
 }
 
-export async function createApiKnowledgeItem(payload: {
-  title: string;
-  type: string;
-  content: string;
-  tags: string[];
-  visibility: string;
-}) {
-  return requestJson<{ knowledgeItem: ApiKnowledgeItem }>("/api/knowledge-items", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+export function createApiKnowledgeItem(payload: Pick<ApiKnowledgeItem, "title" | "type" | "content" | "tags" | "visibility">) {
+  return postJson<{ knowledgeItem: ApiKnowledgeItem }>("/api/knowledge-items", payload);
 }
 
 export async function listApiConnectors() {
   return requestJson<{ connectors: ApiConnector[] }>("/api/connectors");
 }
 
-export async function createApiConnector(payload: {
-  kind: "MCP" | "CLI";
-  name: string;
-  description: string;
-  command: string;
-  risk: "low" | "medium" | "high";
-  binding: string;
-}) {
-  return requestJson<{ connector: ApiConnector }>("/api/connectors", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+export function createApiConnector(payload: Pick<ApiConnector, "kind" | "name" | "description" | "command" | "risk" | "binding">) {
+  return postJson<{ connector: ApiConnector }>("/api/connectors", payload);
 }
 
-export async function checkApiConnector(connectorId: string) {
-  return requestJson<{ ok: boolean; status: string }>(`/api/connectors/${connectorId}/check`, {
-    method: "POST",
-  });
-}
-
-export async function invokeApiConnector(connectorId: string, taskId: string) {
-  return requestJson<{ ok: boolean; status: string; approval?: ApiApproval; result?: unknown }>(`/api/connectors/${connectorId}/invoke`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ taskId }),
-  });
-}
-
-export async function invokeApiMcpTool(connectorId: string, taskId: string, toolName: string, toolArgs: Record<string, unknown>) {
-  return requestJson<{ ok: boolean; status: string; approval?: ApiApproval; result?: unknown }>(`/api/connectors/${connectorId}/invoke`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ taskId, toolName, toolArgs }),
-  });
+export function checkApiConnector(connectorId: string) {
+  return requestJson<{ ok: boolean; status: string }>(`/api/connectors/${connectorId}/check`, { method: "POST" });
 }
 
 export async function listApiApprovals(status?: "pending" | "allowed" | "denied") {
@@ -312,116 +252,32 @@ export async function listApiAgentTeams() {
   return requestJson<{ teams: ApiAgentTeam[] }>("/api/agent-teams");
 }
 
-export async function createApiAgentTeam(payload: {
-  name: string;
-  workflow: string;
-  description: string;
-  members: Array<{
-    agentId: string;
-    role: string;
-    order: number;
-  }>;
-}) {
-  return requestJson<{ team: ApiAgentTeam }>("/api/agent-teams", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+export function createApiAgentTeam(payload: Pick<ApiAgentTeam, "name" | "workflow" | "description" | "members">) {
+  return postJson<{ team: ApiAgentTeam }>("/api/agent-teams", payload);
 }
 
 export async function listApiArtifacts() {
   return requestJson<{ artifacts: ApiArtifact[] }>("/api/artifacts");
 }
 
-export async function createApiArtifact(payload: {
-  taskId?: string;
-  runId?: string;
-  name: string;
-  kind: string;
-  summary: string;
-  source: string;
-  path: string;
-  manifest: Record<string, unknown>;
-  content?: string;
-}) {
-  return requestJson<{ artifact: ApiArtifact }>("/api/artifacts", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
 export async function getApiArtifactContent(artifactId: string) {
   return requestJson<{ artifact: ApiArtifact; content: string; versions: ApiArtifactVersion[] }>(`/api/artifacts/${artifactId}/content`);
-}
-
-export async function listApiArtifactVersions(artifactId: string) {
-  return requestJson<{ versions: ApiArtifactVersion[] }>(`/api/artifacts/${artifactId}/versions`);
-}
-
-export async function createApiArtifactVersion(artifactId: string, payload: {
-  content: string;
-  summary: string;
-  contentType?: string;
-}) {
-  return requestJson<{ version: ApiArtifactVersion }>(`/api/artifacts/${artifactId}/versions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
 }
 
 export async function listApiWorkflows() {
   return requestJson<{ workflows: ApiWorkflow[] }>("/api/workflows");
 }
 
-export async function createApiWorkflow(payload: {
-  name: string;
-  description: string;
-  provider: string;
-  concurrency: number;
-  tags: string[];
-  steps: ApiWorkflowStep[];
-}) {
-  return requestJson<{ workflow: ApiWorkflow }>("/api/workflows", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function exportApiWorkflowYaml(workflowId: string) {
-  const response = await fetch(`/api/workflows/${workflowId}/yaml`);
-  if (!response.ok) throw new Error(`workflow_yaml_failed_${response.status}`);
-  return response.text();
-}
-
-export async function importApiWorkflowYaml(yaml: string) {
-  return requestJson<{ workflow: ApiWorkflow }>("/api/workflows/import", {
-    method: "POST",
-    headers: { "content-type": "text/yaml" },
-    body: yaml,
-  });
-}
-
-export async function runApiWorkflow(workflowId: string, payload?: { fromStepId?: string; feedback?: string }) {
-  return requestJson<{ ok: boolean; status: string; task: ApiTask; runId: string; artifact?: ApiArtifact }>(`/api/workflows/${workflowId}/run`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload ?? {}),
-  });
+export function createApiWorkflow(payload: Pick<ApiWorkflow, "name" | "description" | "provider" | "concurrency" | "tags" | "steps">) {
+  return postJson<{ workflow: ApiWorkflow }>("/api/workflows", payload);
 }
 
 export async function listApiSecrets() {
   return requestJson<{ secrets: ApiSecret[] }>("/api/secrets");
 }
 
-export async function createApiSecret(payload: { name: string; scope: string; envVar: string }) {
-  return requestJson<{ secret: ApiSecret }>("/api/secrets", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+export function createApiSecret(payload: { name: string; scope: string; envVar: string }) {
+  return postJson<{ secret: ApiSecret }>("/api/secrets", payload);
 }
 
 export async function scanApiSkills() {
@@ -464,4 +320,8 @@ async function requestJson<T>(path: string, init?: RequestInit) {
     throw new Error(`request_failed_${response.status}`);
   }
   return response.json() as Promise<T>;
+}
+
+function postJson<T>(path: string, body: unknown) {
+  return requestJson<T>(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 }

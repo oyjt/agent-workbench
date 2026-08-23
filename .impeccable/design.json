@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-24T12:00:00+08:00",
+  "title": "Design System: Agent Workbench",
+  "extensions": {
+    "colorMeta": {
+      "control-blue": { "role": "primary", "displayName": "控制蓝", "canonical": "#1e40af", "tonalRamp": ["#0b153b", "#102263", "#17318a", "#1e40af", "#4264c5", "#7890dc", "#b6c3ee", "#edf3ff"] },
+      "action-blue": { "role": "primary", "displayName": "行动蓝", "canonical": "#2563eb", "tonalRamp": ["#0b1d4a", "#123481", "#1b4db8", "#2563eb", "#5a87f0", "#8eacf5", "#c4d4fa", "#eff4ff"] },
+      "ink": { "role": "neutral", "displayName": "深墨蓝", "canonical": "#172033", "tonalRamp": ["#0b101a", "#172033", "#303b51", "#4e5a70", "#718096", "#a1abba", "#d1d7df", "#f4f6f8"] },
+      "body-ink": { "role": "neutral", "displayName": "正文墨灰", "canonical": "#39465a", "tonalRamp": ["#111721", "#202a38", "#39465a", "#59677b", "#7e8a9b", "#a8b1bd", "#d3d8df", "#f4f6f8"] },
+      "muted-ink": { "role": "neutral", "displayName": "辅助墨灰", "canonical": "#5b6678", "tonalRamp": ["#151a22", "#2b3340", "#434e5e", "#5b6678", "#7e8999", "#a5aebb", "#d0d5dc", "#f4f6f8"] },
+      "placeholder-ink": { "role": "neutral", "displayName": "占位墨灰", "canonical": "#6b7280", "tonalRamp": ["#181b20", "#32363d", "#505660", "#6b7280", "#8d949f", "#b1b6be", "#d7dade", "#f5f6f7"] },
+      "canvas": { "role": "neutral", "displayName": "控制台底色", "canonical": "#f4f6f8", "tonalRamp": ["#1b1e22", "#353a40", "#565c63", "#7b8289", "#a4aab0", "#c9cdd2", "#e5e8eb", "#f4f6f8"] },
+      "panel": { "role": "neutral", "displayName": "面板白", "canonical": "#ffffff", "tonalRamp": ["#262626", "#474747", "#6b6b6b", "#929292", "#b8b8b8", "#d8d8d8", "#eeeeee", "#ffffff"] },
+      "border": { "role": "neutral", "displayName": "结构边框", "canonical": "#dbe2ea", "tonalRamp": ["#18202a", "#303d4b", "#4f6173", "#71869a", "#99aabc", "#bdc9d5", "#dbe2ea", "#f3f6f8"] },
+      "success": { "role": "success", "displayName": "完成绿", "canonical": "#15803d", "tonalRamp": ["#082314", "#0d4022", "#125f30", "#15803d", "#3b9b5c", "#6fba84", "#add9b9", "#edf8f0"] },
+      "success-ink": { "role": "success", "displayName": "成功标签文字", "canonical": "#166534", "tonalRamp": ["#071f10", "#0c3a1e", "#11542a", "#166534", "#3f8557", "#77aa88", "#b2d2bc", "#ecfdf3"] },
+      "warning": { "role": "warning", "displayName": "审批琥珀", "canonical": "#a16207", "tonalRamp": ["#2d1a02", "#503002", "#784903", "#a16207", "#bd812a", "#d5a45d", "#eacb9d", "#fbf3e6"] },
+      "warning-ink": { "role": "warning", "displayName": "审批标签文字", "canonical": "#854d0e", "tonalRamp": ["#281501", "#482701", "#693b07", "#854d0e", "#aa712d", "#cf9d65", "#ead0a5", "#fffbeb"] },
+      "danger": { "role": "danger", "displayName": "故障红", "canonical": "#b42318", "tonalRamp": ["#320b08", "#59110c", "#861a12", "#b42318", "#ca4b42", "#dc7c75", "#edb5b1", "#fbedec"] },
+      "code-surface": { "role": "neutral", "displayName": "代码深面", "canonical": "#101827", "tonalRamp": ["#080c13", "#101827", "#293345", "#4a5669", "#707c8e", "#9fa8b5", "#d0d5dc", "#f3f5f7"] }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "界面正文", "purpose": "主要说明、对话与表单内容。" },
+      "label": { "displayName": "状态标签", "purpose": "作者、时间、工作区名称和紧凑元数据。" },
+      "mono": { "displayName": "机器文本", "purpose": "运行 ID、路径、代码和产物内容。" }
+    },
+    "shadows": [
+      { "name": "composer-ambient", "value": "0 10px 32px rgba(25,39,64,.1)", "purpose": "使固定输入器与滚动会话分离。" },
+      { "name": "focus-ring", "value": "0 0 0 3px rgba(30,64,175,.12)", "purpose": "强化键盘和输入焦点。" },
+      { "name": "mobile-drawer", "value": "12px 0 36px rgba(25,39,64,.16)", "purpose": "移动端侧栏浮层。" }
+    ],
+    "motion": [
+      { "name": "state-fast", "value": "150ms ease", "purpose": "列表、卡片与侧栏状态变化。" },
+      { "name": "layout-medium", "value": "180ms cubic-bezier(.2,.8,.2,1)", "purpose": "三栏网格收起与展开；减少动态效果时直接切换状态。" }
+    ],
+    "breakpoints": [
+      { "name": "details-overlay", "value": "1120px" },
+      { "name": "single-column", "value": "760px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "明确、克制的主要操作。",
+      "html": "<button class=\"ds-btn-primary\">新建会话</button>",
+      "css": ".ds-btn-primary{height:40px;padding:0 16px;color:#fff;background:#2563eb;border:0;border-radius:10px;font:600 14px system-ui;transition:background 150ms ease}.ds-btn-primary:hover{background:#1e4fc4}.ds-btn-primary:focus-visible{outline:2px solid #1e40af;outline-offset:2px}.ds-btn-primary:active{background:#183fa0}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "带明确结构边框和控制蓝焦点的字段。",
+      "html": "<input class=\"ds-input\" value=\"搜索会话\" aria-label=\"搜索会话\">",
+      "css": ".ds-input{width:260px;min-height:44px;padding:0 12px;color:#172033;background:#fff;border:1px solid #dbe2ea;border-radius:10px;font:14px system-ui}.ds-input:hover{border-color:#9aa9bb}.ds-input:focus-visible{border-color:#1e40af;outline:2px solid rgba(30,64,175,.18);outline-offset:1px}"
+    },
+    {
+      "name": "Selected Session Row",
+      "kind": "nav",
+      "refersTo": "selected-row",
+      "description": "以浅蓝底和细边框标记当前会话。",
+      "html": "<button class=\"ds-session-row\"><strong>审查当前项目</strong><small>运行中 · 14:32</small></button>",
+      "css": ".ds-session-row{display:flex;width:260px;min-height:64px;flex-direction:column;gap:7px;padding:10px;color:#172033;background:#edf3ff;border:1px solid #c9d8f7;border-radius:10px;text-align:left;font:14px system-ui}.ds-session-row small{color:#5b6678;font-size:12px}.ds-session-row:hover{background:#e4edff}.ds-session-row:focus-visible{outline:2px solid #1e40af;outline-offset:2px}"
+    },
+    {
+      "name": "Tool Event Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "运行轨道中的机器事件容器。",
+      "html": "<article class=\"ds-tool-card\"><strong>命令行执行完成</strong><p>类型检查和测试已通过。</p></article>",
+      "css": ".ds-tool-card{width:360px;padding:14px 16px;color:#172033;background:#f7f8fa;border:1px solid #dbe2ea;border-radius:12px;font:14px/1.5 system-ui}.ds-tool-card p{margin:5px 0 0;color:#39465a}.ds-tool-card:hover{border-color:#bdc9d5}"
+    },
+    {
+      "name": "User Message",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "与开放式智能体回复区分的用户会话气泡。",
+      "html": "<article class=\"ds-user-message\"><strong>你</strong><p>继续优化当前设置页面。</p></article>",
+      "css": ".ds-user-message{width:320px;padding:12px 16px;color:#172033;background:#edf3ff;border-radius:16px 16px 4px 16px;font:14px/1.5 system-ui}.ds-user-message p{margin:5px 0 0}.ds-user-message:focus-within{outline:2px solid #1e40af;outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "本地任务控制塔",
+    "overview": "界面像一座紧凑的本地任务控制塔：状态、会话、权限和产物必须能够快速扫描，视觉表达服务于判断和操作。整体气质克制、专业、高密度，品牌存在于精确的间距、明确的状态和稳定的交互中，而不是装饰性场景。组件保持克制、精细和轻量。层次主要由面板底色、细边框与有限的控制蓝建立；阴影只在输入焦点、浮层和小屏抽屉等需要脱离背景的场景出现。",
+    "keyCharacteristics": ["三栏操作型应用壳，信息结构优先于视觉表演。", "冷静的蓝灰中性色，控制蓝只标记主操作、选中和焦点。", "紧凑但不拥挤，重复使用 8–32px 的间距节奏。", "状态同时依靠文字、图标或结构表达，不单独依赖颜色。"],
+    "rules": [
+      { "name": "The Sparse Blue Rule", "body": "控制蓝用于操作、焦点和当前状态，不把整块工作区染成品牌色。", "section": "colors" },
+      { "name": "The One Family Rule", "body": "UI 文本统一使用系统无衬线，只有代码、路径和机器标识切换到等宽字体。", "section": "typography" },
+      { "name": "The Border Before Shadow Rule", "body": "优先用边框和色块分层；只有浮层、焦点和固定输入器可以使用阴影。", "section": "elevation" }
+    ],
+    "dos": ["Do 优先保证状态、主操作和当前上下文可以快速扫描。", "Do 使用边框、面板色差和有限控制蓝建立层次。", "Do 保持 8–32px 的紧凑间距节奏和至少 44px 的交互目标。", "Do 为危险、审批、失败和离线状态提供文字恢复路径。"],
+    "donts": ["Don't 使用营销型渐变、大面积玻璃拟态或无意义装饰动画。", "Don't 通过过度极简、低对比度或大量留白牺牲工作效率。", "Don't 使用游戏化霓虹、发光边框或赛博朋克视觉语言。", "Don't 让阴影取代结构边框，也不要让颜色成为唯一状态信号。"]
+  }
+}

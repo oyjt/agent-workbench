@@ -12,6 +12,12 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       theme={{
         token: {
           colorPrimary: "#2563eb",
+          colorSuccess: "#15803d",
+          colorWarning: "#a16207",
+          colorError: "#b42318",
+          colorText: "#172033",
+          colorTextSecondary: "#5b6678",
+          colorTextPlaceholder: "#6b7280",
           borderRadius: 10,
           fontFamily:
             'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',

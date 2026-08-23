@@ -27,6 +27,16 @@ pnpm web
 http://127.0.0.1:8787
 ```
 
+启动前设置 DeepSeek API 密钥即可启用真实的流式多轮对话：
+
+```bash
+export DEEPSEEK_API_KEY="你的密钥"
+export DEEPSEEK_MODEL="deepseek-v4-flash" # 可选
+pnpm web
+```
+
+密钥只从当前进程环境读取，不写入 SQLite。未配置时，页面会显示明确提示，不会生成模拟回复。
+
 使用 `pnpm web --no-open` 可只启动服务，`--port 8080` 可修改端口。开发时仍可分别运行 `pnpm api` 与 `pnpm dev` 使用 Vite HMR。
 
 ## 常用命令

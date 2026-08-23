@@ -51,10 +51,6 @@ src/
     artifacts/
     knowledge/
     connectors/
-  harness/             浏览器/控制平面共享的轻量 harness contracts
-    core.ts
-    policy.ts
-    types.ts
   infrastructure/      API client、local storage、serialization
   shared/              通用 UI、types、utils
 
@@ -177,12 +173,11 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 
 ### Phase 1 — 建立 seam，不改变功能
 
-- 新增 `src/harness/*` contracts。
 - 新增 server harness contracts。
 - 增加单元测试基础。
 - 保持现有页面和 API 行为兼容。
 
-状态：已完成。前后端 contracts、Capability Registry、Event Bus、Policy pipeline 与可逆插件生命周期均已实现并覆盖测试。
+状态：已完成。Capability Registry、Event Bus、Policy pipeline 与可逆插件生命周期由后端实现并覆盖测试。浏览器端没有 Harness 调用方，不再维护重复 contracts。
 
 ### Phase 2 — 拆后端单体
 
@@ -215,6 +210,8 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 状态：已完成。领域类型、API DTO 映射、IndexedDB/localStorage 持久化、静态运行模拟、Workflow YAML 与 DAG 算法，以及 Agents、Skills、Plugins、Knowledge、Connectors、Creative、Assets、Settings、Workflows 页面和全部 Drawer/Modal overlay 已迁出 `App.tsx`。`App.tsx` 只保留应用状态编排、导航和 feature composition；迁出的页面使用动态 import 与统一 Suspense 边界生成独立构建 chunk。
 
 后续简化（2026-08-24）：产品界面进一步收敛为 `src/app/session-app.tsx` 三栏 Session shell；删除旧 `App.tsx`、一级管理页面、假数据和 Static Local 双轨。领域能力仍由后端 API/Harness 提供，高级配置集中在 Settings。
+
+再次精简（2026-08-24）：删除没有生产调用方的 `src/harness/*` 副本，并将 `src/api.ts` 收窄到当前界面实际调用的方法；完整能力继续保留在后端 API，避免前端为尚未实现的编辑界面维护客户端包装。
 
 ### Phase 4 — Capability pipeline
 

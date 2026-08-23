@@ -140,7 +140,7 @@ const server = createServer(async (request, response) => {
 
     const taskStartMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/start$/);
     if (request.method === "POST" && taskStartMatch) {
-      const result = startTask(taskStartMatch[1]);
+      const result = await startTask(taskStartMatch[1]);
       sendJson(response, 200, result);
       return;
     }
@@ -341,7 +341,8 @@ const server = createServer(async (request, response) => {
       ensureRun(runId);
       const body = await readJson(request);
       const event = appendEvent(runId, body.type ?? "message", body.payload ?? {});
-      sendJson(response, 201, { event });
+      const reply = body.type === "user.message" ? await continueConversation(runId) : null;
+      sendJson(response, 201, { event, reply });
       return;
     }
 
@@ -714,7 +715,7 @@ function updateTaskAndRunStatus(taskId, status) {
   }
 }
 
-function startTask(taskId) {
+async function startTask(taskId) {
   const task = getTask.get(taskId);
   if (!task) throw new Error("task_not_found");
 
@@ -741,71 +742,83 @@ function startTask(taskId) {
     runAgentTeam(run.id, task.target_id);
   } else {
     appendEvent(run.id, "agent.started", { agentId: task.target_id, runtime: task.runtime });
-    appendEvent(run.id, "message.delta", { role: "assistant", text: `${task.runtime} 正在执行：${task.title}` });
+    try { await appendAssistantReply(task, run.id); }
+    catch (error) { appendAssistantError(run.id, error); }
     appendEvent(run.id, "agent.completed", { agentId: task.target_id });
-  }
-
-  if (task.runtime === "Codex" || task.target_id.includes("coding")) {
-    const artifact = createArtifact({
-      taskId: task.id,
-      runId: run.id,
-      name: `${task.title} · diff.md`,
-      kind: "diff",
-      summary: "Codex Adapter 生成的代码变更计划和验证摘要。",
-      source: "Codex",
-      path: `.agent-workbench/artifacts/${task.id}/diff.md`,
-      manifest: { sourceTaskId: task.id, runtime: task.runtime },
-      content: [
-        `# ${task.title} · Diff Summary`,
-        "",
-        "- Runtime: Codex",
-        "- Scope: 代码变更计划、验证摘要和后续检查点",
-        "- Status: simulated adapter output",
-        "",
-        "```diff",
-        "+ 生成任务上下文",
-        "+ 写入运行事件",
-        "+ 登记 Artifact 版本",
-        "```",
-        "",
-      ].join("\n"),
-    });
-    appendEvent(run.id, "adapter.codex.diff", {
-      artifactId: artifact.id,
-      file: "src/App.tsx",
-      summary: artifact.summary,
-    });
-  } else {
-    const artifact = createArtifact({
-      taskId: task.id,
-      runId: run.id,
-      name: `${task.title} · draft.md`,
-      kind: "markdown",
-      summary: "Runtime Adapter 生成的首版草稿。",
-      source: task.runtime,
-      path: `.agent-workbench/artifacts/${task.id}/draft.md`,
-      manifest: { sourceTaskId: task.id, runtime: task.runtime },
-      content: [
-        `# ${task.title}`,
-        "",
-        task.prompt,
-        "",
-        "## 初版输出",
-        "",
-        "这是 Runtime Adapter 生成的首版草稿，用于验证 Artifact 文件写入、版本管理和资产库预览。",
-        "",
-      ].join("\n"),
-    });
-    appendEvent(run.id, "artifact.created", {
-      artifactId: artifact.id,
-      type: artifact.kind,
-      title: artifact.name,
-      manifest: artifact.manifest,
-    });
   }
 
   updateTaskAndRunStatus(taskId, "done");
   return { ok: true, status: "done", runId: run.id };
+}
+
+async function continueConversation(runId) {
+  const run = ensureRun(runId);
+  const task = getTask.get(run.task_id);
+  if (!task) throw new Error("task_not_found");
+  updateTaskAndRunStatus(task.id, "running");
+  try {
+    return await appendAssistantReply(task, runId);
+  } catch (error) {
+    return appendAssistantError(runId, error);
+  } finally {
+    updateTaskAndRunStatus(task.id, "done");
+  }
+}
+
+function appendAssistantError(runId, error) {
+  const detail = error instanceof Error ? error.message : "unknown_error";
+  return appendEvent(runId, "assistant.error", { role: "assistant", text: `模型请求失败：${detail}。请检查密钥、网络和模型配置后重试。` });
+}
+
+async function appendAssistantReply(task, runId) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return appendEvent(runId, "runtime.unconfigured", { role: "assistant", text: "尚未配置 DEEPSEEK_API_KEY。请先设置环境变量并重启本地 Web 服务。" });
+
+  const history = listEvents.all(runId).map(eventFromRow).flatMap((event) => {
+    const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+    if (event.type === "user.message" && typeof payload.text === "string") return [{ role: "user", content: payload.text }];
+    if (event.type === "assistant.message" && typeof payload.text === "string") return [{ role: "assistant", content: payload.text }];
+    return [];
+  });
+  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
+  const messages = [{ role: "system", content: "你是 Agent Workbench 中的助理。请使用简体中文，直接、清晰地帮助用户完成任务。" }, { role: "user", content: task.prompt }, ...history];
+  const messageId = createId("message");
+  appendEvent(runId, "model.started", { provider: "deepseek", model, messageId });
+  const response = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({ model, messages, thinking: { type: "disabled" }, stream: true }),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    appendEvent(runId, "model.failed", { provider: "deepseek", status: response.status, detail });
+    throw new Error(`deepseek_request_failed_${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("deepseek_stream_unavailable");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ") || line === "data: [DONE]\r") continue;
+      try {
+        const delta = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content;
+        if (typeof delta === "string" && delta) {
+          text += delta;
+          appendEvent(runId, "assistant.delta", { role: "assistant", messageId, text });
+        }
+      } catch { /* ignore incomplete provider frames */ }
+    }
+    if (done) break;
+  }
+  if (!text.trim()) throw new Error("deepseek_empty_response");
+  return appendEvent(runId, "assistant.message", { role: "assistant", messageId, text: text.trim(), model });
 }
 
 function runAgentTeam(runId, teamId) {

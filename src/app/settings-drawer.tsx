@@ -1,0 +1,54 @@
+import { Alert, Button, Divider, Drawer, Empty, Form, Input, InputNumber, Select, Spin, Tabs, Tag, Typography, message } from "antd";
+import { useState } from "react";
+import type { ReactNode } from "react";
+import { checkApiConnector, createApiAgent, createApiAgentTeam, createApiConnector, createApiKnowledgeItem, createApiSecret, createApiWorkflow } from "../api";
+import type { ApiAgent, ApiAgentTeam, ApiConnector, ApiKnowledgeItem, ApiSecret, ApiSkill, ApiWorkflow, ApiWorkflowPlugin } from "../api";
+
+const { Paragraph, Text, Title } = Typography;
+
+export type SettingsCatalog = {
+  connectors: ApiConnector[];
+  knowledge: ApiKnowledgeItem[];
+  skills: ApiSkill[];
+  plugins: ApiWorkflowPlugin[];
+  workflows: ApiWorkflow[];
+  secrets: ApiSecret[];
+};
+
+type SaveAction = (action: () => Promise<unknown>) => Promise<void>;
+
+export default function SettingsDrawer({ open, loading, error, onClose, onRetry, onChanged, agents, teams, catalog }: { open: boolean; loading: boolean; error?: string; onClose: () => void; onRetry: () => void; onChanged: () => Promise<void>; agents: ApiAgent[]; teams: ApiAgentTeam[]; catalog: SettingsCatalog }) {
+  const [saving, setSaving] = useState(false);
+  const riskLabel = { low: "低风险", medium: "中风险", high: "高风险" } as const;
+  const capabilities = [...catalog.skills.map((item) => ({ id: item.id, name: item.name, meta: `技能 · ${riskLabel[item.risk]}` })), ...catalog.plugins.map((item) => ({ id: item.id, name: item.name, meta: `插件 · ${item.version}` })), ...catalog.connectors.map((item) => ({ id: item.id, name: item.name, meta: `${item.kind} · ${riskLabel[item.risk]}` }))];
+  const save: SaveAction = async (action) => {
+    if (saving) return;
+    setSaving(true);
+    try { await action(); await onChanged(); message.success("设置已保存"); }
+    catch { message.error("设置保存失败，请检查输入和本地服务后重试。"); }
+    finally { setSaving(false); }
+  };
+
+  return <Drawer title="设置" open={open} onClose={onClose} width={760} className="settings-drawer">
+    {error && <Alert className="settings-error" type="error" showIcon message="部分设置加载失败" description={error} action={<Button size="small" onClick={onRetry}>重试</Button>} />}
+    <Spin spinning={loading} tip="正在读取设置…">
+      <Tabs tabPosition="left" items={[
+        { key: "agents", label: "智能体", children: <SettingsPane title="智能体与团队" items={[...agents.map((item) => ({ id: item.id, name: item.name, meta: `${item.runtime} · ${item.model}` })), ...teams.map((item) => ({ id: item.id, name: item.name, meta: `团队 · ${item.members.length} 名成员` }))]} empty="暂无智能体预设"><AgentForm saving={saving} save={save} /><TeamForm agents={agents} saving={saving} save={save} /></SettingsPane> },
+        { key: "capabilities", label: "能力", children: <SettingsPane title="技能、插件与连接器" items={capabilities} empty="未发现可用能力"><ConnectorForm saving={saving} save={save} /><div className="connector-checks">{catalog.connectors.map((item) => <Button key={item.id} loading={saving} onClick={() => void save(async () => { const result = await checkApiConnector(item.id); message[result.ok ? "success" : "error"](`${item.name}：${result.status}`); })}>检查 {item.name}</Button>)}</div></SettingsPane> },
+        { key: "knowledge", label: "知识库", children: <SettingsPane title="项目知识" items={catalog.knowledge.map((item) => ({ id: item.id, name: item.title, meta: `${item.type} · ${item.status}` }))} empty="暂无知识条目"><KnowledgeForm saving={saving} save={save} /></SettingsPane> },
+        { key: "workflows", label: "工作流", children: <SettingsPane title="工作流" items={catalog.workflows.map((item) => ({ id: item.id, name: item.name, meta: `${item.steps.length} 个步骤 · ${item.provider}` }))} empty="暂无工作流"><WorkflowForm saving={saving} save={save} /></SettingsPane> },
+        { key: "models", label: "模型与密钥", children: <SettingsPane title="模型凭据" items={catalog.secrets.map((item) => ({ id: item.id, name: item.name, meta: `${item.envVar} · ${item.status === "available" ? "可用" : "环境变量未设置"}` }))} empty="尚未登记模型密钥"><Alert type="info" showIcon message="密钥值不会写入数据库" description="这里只登记运行进程读取的环境变量名。请在启动 pnpm web 前设置对应环境变量。" /><SecretForm saving={saving} save={save} /></SettingsPane> },
+        { key: "permissions", label: "权限", children: <div className="settings-copy"><Title level={5}>执行前检查策略</Title><Paragraph>低风险能力自动运行；中高风险提供方会暂停当前会话，等待用户审批。</Paragraph><Tag color="blue">可写工作区</Tag><Tag>操作前询问</Tag></div> },
+      ]} />
+    </Spin>
+  </Drawer>;
+}
+
+function SettingsPane({ title, items, empty, children }: { title: string; items: Array<{ id: string; name: string; meta: string }>; empty: string; children: ReactNode }) { return <section className="settings-pane"><Title level={5}>{title}</Title><div className="settings-actions">{children}</div><Divider /><SettingsList items={items} empty={empty} /></section>; }
+function AgentForm({ saving, save }: { saving: boolean; save: SaveAction }) { return <Form layout="vertical" onFinish={(value) => save(() => createApiAgent({ ...value, skillIds: [], knowledgeScope: "项目知识库", permissionProfile: "collaborative", systemPrompt: value.systemPrompt ?? "" }))} initialValues={{ runtime: "Codex", model: "gpt-5.4" }}><Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入智能体名称" }]}><Input maxLength={80} /></Form.Item><Form.Item label="说明" name="description" rules={[{ required: true, message: "请输入用途说明" }]}><Input maxLength={240} /></Form.Item><div className="form-grid"><Form.Item label="运行时" name="runtime"><Select options={["Codex", "OpenCode", "BrowserOps"].map((value) => ({ value }))} /></Form.Item><Form.Item label="模型" name="model"><Input maxLength={80} /></Form.Item></div><Form.Item label="系统提示词" name="systemPrompt"><Input.TextArea rows={3} maxLength={8000} showCount /></Form.Item><Button type="primary" htmlType="submit" loading={saving}>添加智能体</Button></Form>; }
+function TeamForm({ agents, saving, save }: { agents: ApiAgent[]; saving: boolean; save: SaveAction }) { return <Form layout="vertical" onFinish={(value) => save(() => createApiAgentTeam({ name: value.name, description: value.description ?? "", workflow: "lead_sequential", members: (value.agentIds ?? []).map((agentId: string, order: number) => ({ agentId, role: order ? "执行" : "负责人", order })) }))}><Form.Item label="团队名称" name="name" rules={[{ required: true, message: "请输入团队名称" }]}><Input maxLength={80} /></Form.Item><Form.Item label="成员" name="agentIds" rules={[{ required: true, message: "请选择至少一个成员" }]}><Select mode="multiple" options={agents.map((item) => ({ value: item.id, label: item.name }))} /></Form.Item><Form.Item label="说明" name="description"><Input maxLength={240} /></Form.Item><Button htmlType="submit" loading={saving} disabled={!agents.length}>添加团队</Button></Form>; }
+function ConnectorForm({ saving, save }: { saving: boolean; save: SaveAction }) { return <Form layout="vertical" initialValues={{ kind: "CLI", risk: "medium", binding: "workspace" }} onFinish={(value) => save(() => createApiConnector(value))}><div className="form-grid"><Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入连接器名称" }]}><Input maxLength={80} /></Form.Item><Form.Item label="类型" name="kind"><Select options={["CLI", "MCP"].map((value) => ({ value }))} /></Form.Item></div><Form.Item label="命令或端点" name="command" rules={[{ required: true, message: "请输入命令或 MCP 端点" }]}><Input maxLength={1000} /></Form.Item><Form.Item label="说明" name="description" rules={[{ required: true, message: "请输入用途说明" }]}><Input maxLength={240} /></Form.Item><div className="form-grid"><Form.Item label="风险等级" name="risk"><Select options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高" }]} /></Form.Item><Form.Item label="绑定范围" name="binding"><Input maxLength={120} /></Form.Item></div><Button type="primary" htmlType="submit" loading={saving}>添加连接器</Button></Form>; }
+function KnowledgeForm({ saving, save }: { saving: boolean; save: SaveAction }) { return <Form layout="vertical" initialValues={{ type: "SOP", visibility: "project" }} onFinish={(value) => save(() => createApiKnowledgeItem({ ...value, tags: String(value.tags ?? "").split(/[,，]/).map((tag) => tag.trim()).filter(Boolean) }))}><Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入标题" }]}><Input maxLength={120} /></Form.Item><div className="form-grid"><Form.Item label="类型" name="type"><Input maxLength={40} /></Form.Item><Form.Item label="标签" name="tags" help="用逗号分隔"><Input maxLength={240} /></Form.Item></div><Form.Item label="内容" name="content" rules={[{ required: true, message: "请输入知识内容" }]}><Input.TextArea rows={5} maxLength={20000} showCount /></Form.Item><Form.Item name="visibility" hidden><Input /></Form.Item><Button type="primary" htmlType="submit" loading={saving}>添加知识条目</Button></Form>; }
+function WorkflowForm({ saving, save }: { saving: boolean; save: SaveAction }) { return <Form layout="vertical" initialValues={{ provider: "codex-cli", concurrency: 1 }} onFinish={(value) => save(() => createApiWorkflow({ name: value.name, description: value.description ?? "", provider: value.provider, concurrency: value.concurrency, tags: [], steps: [{ id: "step_1", role: "执行者", task: value.task, dependsOn: [] }] }))}><Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入工作流名称" }]}><Input maxLength={80} /></Form.Item><Form.Item label="说明" name="description"><Input maxLength={240} /></Form.Item><Form.Item label="首个步骤任务" name="task" rules={[{ required: true, message: "请输入步骤任务" }]}><Input.TextArea rows={3} maxLength={4000} showCount /></Form.Item><div className="form-grid"><Form.Item label="执行器" name="provider"><Input maxLength={80} /></Form.Item><Form.Item label="并发数" name="concurrency"><InputNumber min={1} max={16} /></Form.Item></div><Button type="primary" htmlType="submit" loading={saving}>添加工作流</Button></Form>; }
+function SecretForm({ saving, save }: { saving: boolean; save: SaveAction }) { return <Form layout="vertical" initialValues={{ scope: "workspace", envVar: "DEEPSEEK_API_KEY" }} onFinish={(value) => save(() => createApiSecret(value))}><Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入配置名称" }]}><Input maxLength={80} placeholder="DeepSeek" /></Form.Item><Form.Item label="环境变量名" name="envVar" rules={[{ required: true, pattern: /^[A-Z][A-Z0-9_]*$/, message: "请输入大写环境变量名" }]}><Input maxLength={120} /></Form.Item><Form.Item name="scope" hidden><Input /></Form.Item><Button type="primary" htmlType="submit" loading={saving}>登记模型凭据</Button></Form>; }
+function SettingsList({ items, empty }: { items: Array<{ id: string; name: string; meta: string }>; empty: string }) { return items.length ? <div className="settings-list">{items.map((item) => <div key={item.id}><Text strong>{item.name}</Text><Text type="secondary">{item.meta}</Text></div>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={empty} />; }
