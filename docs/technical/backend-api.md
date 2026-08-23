@@ -1,6 +1,6 @@
 # Workbench API 与 SQLite
 
-本地后端用于支撑任务、运行事件、Agent、Agent Team、知识库、MCP / CLI 连接器、审批、Artifact、Workflow 和本地插件扫描。它使用 Node.js 内置 `node:sqlite`，不依赖外部数据库服务。
+本地后端用于支撑任务、运行事件、Agent、Agent Team、知识库、MCP / CLI 连接器、审批、Artifact、Workflow 和本地插件扫描。它使用 Node.js 内置 `node:sqlite`，不依赖外部数据库服务。`server/index.mjs` 是最小启动入口，依赖装配位于 `server/application.mjs`；Capability、Policy、provider、服务、数据库和 transport 均有独立模块边界。
 
 ## 运行
 
@@ -37,6 +37,7 @@ pnpm db:init
 - `knowledge_items`
 - `connectors`
 - `approvals`
+- `pending_capability_executions`
 - `artifacts`
 - `artifact_versions`
 - `workflows`
@@ -47,6 +48,12 @@ pnpm db:init
 ### Health
 
 - `GET /api/health`
+
+### Harness Extensions
+
+- `GET /api/extensions`
+
+返回当前已注册 Capability（不暴露执行函数）和 Runtime Adapter 清单，用于运行时诊断与扩展观测。
 
 ### Tasks / Runs / Events
 
@@ -99,7 +106,9 @@ Agent Team 当前使用串行执行模型：`startTask` 会按 `agent_team_membe
 - `POST /api/connectors/:connectorId/check`
 - `POST /api/connectors/:connectorId/invoke`
 
-低风险 CLI 会通过 `spawnSync` 在项目根目录执行命令，并把 stdout / stderr 摘要写入事件。中高风险 MCP / CLI 调用不会直接执行，而是创建 `approval` 记录并返回 `approval_required`。
+Connector 由 `ConnectorProviderRegistry` 按注册顺序解析。目前内置 CLI、MCP stdio 和 MCP HTTP provider；新增 provider 不需要修改中心执行 switch。所有 invoke 均先注册为 Capability，并共用 Harness Policy pipeline。
+
+低风险 CLI 会通过 `spawnSync` 在项目根目录执行命令，并把 stdout / stderr 摘要写入事件。中高风险 MCP / CLI 调用不会直接执行，而是创建 `approvals` 与 `pending_capability_executions` 记录并返回 `approval_required`。
 
 MCP stdio 连接器支持最小 JSON-RPC client：
 
@@ -116,7 +125,7 @@ MCP stdio 连接器支持最小 JSON-RPC client：
 - `GET /api/approvals?status=pending`
 - `POST /api/approvals/:approvalId/respond`
 
-审批决策支持 `allow_once`、`allow_session` 和 `deny`。允许后任务状态进入 `running`，拒绝后进入 `paused`。
+审批决策支持 `allow_once`、`allow_session` 和 `deny`。拒绝后任务进入 `paused`；允许后服务读取持久化的待执行 Capability，以一次性 `approvalGranted` 上下文重新进入 Policy pipeline，执行原 CLI/MCP provider，并把结果或错误写回 `pending_capability_executions`。响应中的 `execution` 字段包含恢复执行结果。
 
 ### Skills / Workflow Plugins
 
@@ -167,13 +176,15 @@ Secret 管理只保存环境变量引用，例如 `OPENAI_API_KEY`，返回 `ava
 
 ## 生产静态服务
 
-执行 `pnpm build` 后，`pnpm start` 会用同一个 Node server 同时提供 API 和 `dist` 静态文件：
+执行 `pnpm build` 后运行 `pnpm web`。该命令检查 `dist`、启动同一个 Node server 提供 API 与静态文件，并默认打开浏览器：
 
 ```text
 http://127.0.0.1:8787
 ```
 
 这也是 GitHub Actions 打包产物的运行方式。
+
+可选参数：`pnpm web --no-open`、`pnpm web --port 8080`、`pnpm web --host 0.0.0.0`。`pnpm start` 等价于不自动打开浏览器的 Web 服务。
 
 ## 当前边界
 

@@ -116,6 +116,8 @@ MCP 与 CLI 连接器统一遵循最小权限：
 
 ## 10. Plugin Capability Gate
 
+当前后端的实际执行顺序为：解析 Capability → Scope/Policy 决策 → 必要时创建 Approval 与待执行记录 → Provider 执行 → Run Event/结果持久化。中高风险调用在审批前不会触达 CLI/MCP provider；批准后使用一次性授权上下文恢复同一 Capability，避免绕过 Policy 或重复申请。
+
 Workflow plugin 启动前必须生成 capability gate。用户看到的不是抽象“允许插件运行”，而是清楚看到它将获得哪些能力：
 
 | 能力 | 展示信息 | 默认策略 |

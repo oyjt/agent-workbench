@@ -1,5 +1,9 @@
 # 数据模型草案
 
+> 本文保留目标数据模型，包含尚未落地的 `knowledge_bases`、`workflow_plugins`、独立 MCP/CLI 表等设计。当前 SQLite schema 的唯一实现来源是 `server/db/schema.mjs`，当前表包括：`tasks`、`runs`、`events`、`agents`、`knowledge_items`、`connectors`、`approvals`、`pending_capability_executions`、`agent_teams`、`agent_team_members`、`artifacts`、`artifact_versions`、`workflows` 和 `secrets`。
+
+当前实现把 MCP/CLI 统一存储为 `connectors`，把运行事件存储为 `events`，把审批后需要恢复的调用存储为 `pending_capability_executions`。目标模型中的拆表命名不代表当前数据库字段。
+
 ## 1. 核心表
 
 ### `agents`

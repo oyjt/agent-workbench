@@ -1,12 +1,14 @@
 # Harness 架构重构
 
-本文记录 Agent Workbench 参考 DeepSeek Harness 后采用的轻量化 harness 架构，以及从当前单体实现迁移的边界。
+> 状态：已于 2026-08-24 完成并合并到 `main`。本文同时保留重构动机、迁移阶段和最终完成审计。
+
+本文记录 Agent Workbench 参考 DeepSeek Harness 后采用的轻量化 harness 架构，以及从原单体实现迁移后的边界。
 
 ## 为什么重构
 
 当前产品方向本身是正确的：Workbench 是控制平面，通过 Runtime Adapter 调用 Codex、Claude Code、OpenCode、Browser Worker、MCP、CLI 等执行器，而不是重新实现一个完整模型 Agent。
 
-当前主要问题在实现结构：
+重构前的主要问题是：
 
 - 前端业务、页面、工作流算法和本地存储逻辑集中在 `src/App.tsx`。
 - 本地 API、SQLite schema、repository、HTTP/SSE、connector/runtime 执行集中在 `server/index.mjs`。
@@ -212,6 +214,8 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 
 状态：已完成。领域类型、API DTO 映射、IndexedDB/localStorage 持久化、静态运行模拟、Workflow YAML 与 DAG 算法，以及 Agents、Skills、Plugins、Knowledge、Connectors、Creative、Assets、Settings、Workflows 页面和全部 Drawer/Modal overlay 已迁出 `App.tsx`。`App.tsx` 只保留应用状态编排、导航和 feature composition；迁出的页面使用动态 import 与统一 Suspense 边界生成独立构建 chunk。
 
+后续简化（2026-08-24）：产品界面进一步收敛为 `src/app/session-app.tsx` 三栏 Session shell；删除旧 `App.tsx`、一级管理页面、假数据和 Static Local 双轨。领域能力仍由后端 API/Harness 提供，高级配置集中在 Settings。
+
 ### Phase 4 — Capability pipeline
 
 - CLI/MCP 统一注册成 capability。
@@ -240,16 +244,16 @@ Workflow step、Agent、Team 可以在 profile 基础上继续收窄能力，不
 - CLI 与 MCP 共用 capability/policy/approval pipeline。
 - Run event 可完整驱动运行控制台和审计视图。
 - 核心 registry、policy、workflow graph、serialization 有独立测试。
-- 静态本地模式仍可以复用同一领域 contracts，而不是复制第二套业务模型。
+- Web 只使用同一 API/Harness 数据源，不复制第二套浏览器业务模型。
 
 ## 完成审计（2026-08-24）
 
-- [x] `App.tsx` 仅保留应用状态、导航与 feature composition；主要领域算法、页面、overlay、DTO 和持久化已迁出。
+- [x] `src/app/session-app.tsx` 只组合 Session、执行流、Details 与 Settings；Workflow 算法保持独立测试。
 - [x] `server/index.mjs` 仅导入 composition/startup 模块。
 - [x] Runtime 通过 Harness plugin 注册，Connector 通过 `ConnectorProviderRegistry` 注册，无中心执行 switch。
 - [x] CLI/MCP 共用 Capability → Policy → Approval → Provider 管线，审批后可从持久化请求恢复执行。
 - [x] Run event 同时用于 SSE/JSON 回放、运行控制台、审批审计和产物事件。
 - [x] Registry、Policy、Connector provider、数据库 schema、Run Event、Approval、Artifact、Workflow graph 与 YAML serialization 均有独立测试。
-- [x] 静态模式从 `src/domain` contracts 和 `src/infrastructure/static-workspace.ts` 生成相同 Task/Artifact/RunEvent 模型。
+- [x] 已移除 Static Local 双轨，所有 Task/Artifact/RunEvent 来自同一 API 与 SQLite。
 
 验证结果：`pnpm verify`、`pnpm db:init`、高风险 CLI 审批恢复 API 烟测和 `git diff --check` 均通过。

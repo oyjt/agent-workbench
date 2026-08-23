@@ -20,10 +20,11 @@
 
 ## 架构
 
-- [架构概览](architecture/architecture-summary.md)
-- [产品架构方案](architecture/architecture.md)
-- [API 合同草案](architecture/api-contract.md)
-- [数据模型草案](architecture/data-model.md)
+- [当前架构概览](architecture/architecture-summary.md)
+- [Harness 重构与完成审计](architecture/harness-refactor.md)
+- [产品架构蓝图](architecture/architecture.md)
+- [API 合同蓝图](architecture/api-contract.md)
+- [数据模型蓝图](architecture/data-model.md)
 - [知识库与连接器架构](architecture/knowledge-base-and-connectors.md)
 - [安全与权限方案](architecture/security-and-permissions.md)
 
@@ -34,7 +35,7 @@
 
 ## 技术
 
-- [后端 API 与 SQLite](technical/backend-api.md)
+- [当前后端 API、Capability 与 SQLite](technical/backend-api.md)
 
 ## 调研
 

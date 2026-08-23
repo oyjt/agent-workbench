@@ -1,5 +1,7 @@
 # API 合同草案
 
+> 本文是面向后续产品能力的合同蓝图，包含尚未实现的安装、搜索、停止和重试接口。当前可调用端点请以[后端 API 与 SQLite](../technical/backend-api.md)为准；不要将本文直接作为当前服务的 OpenAPI 定义。
+
 ## 1. Realtime
 
 ### `GET /api/runs/:runId/events`

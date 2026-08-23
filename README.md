@@ -1,48 +1,33 @@
 # Agent Workbench
 
-Agent Workbench 是一个本地优先的通用 Agent 工作台，用来管理自媒体、编码、运营等场景中的任务、Agent Team、Skills、Workflow Plugins、团队知识库、MCP / CLI 连接器、审批和产物。
+Agent Workbench 是一个本地优先的 Agent Session 工作台。用户从一个目标开始，在同一条会话流中查看运行事件、工具调用、审批和产物；Agent、Skills、Workflow、知识库与连接器作为能力配置收纳在 Settings 中。
 
 它的目标不是再造一个单体 Agent，而是提供一个可视化控制台：用户在页面中编排任务、绑定工具和知识、处理高风险动作审批，并把运行事件、工作流、产物和版本沉淀为可追踪资产。
 
-## 核心能力
+## 核心体验
 
-- 任务中心：创建任务、查看运行事件、流转任务状态。
-- Agent / Team：配置 Agent 元数据，按顺序组织多 Agent 协作。
-- Skills / Plugins：扫描本地 Skill 与 Workflow Plugin，展示能力、权限和风险。
-- 知识库：管理 SOP、品牌、平台规则、决策和代码文档。
-- MCP / CLI：登记连接器，低风险命令可执行，中高风险动作进入审批。
-- Workflow：生成和保存 DAG 计划，支持 YAML 导入导出、指定 step 重跑和 feedback 返工。
-- Artifact：登记、查看、下载和版本化交付物。
-- Secret：只保存环境变量引用，不保存真实密钥明文。
+- Sessions：左侧选择 Workspace 与历史 Session，中间持续处理目标。
+- Execution stream：消息、Runtime、CLI/MCP、Capability 与审批共享一条运行轨道。
+- Details：右侧集中查看 Run、Produced Files 和 Context。
+- Settings：统一管理 Agent presets、Capabilities、Knowledge、Workflows、Models 与 Permissions。
 
-## 运行模式
+## 构建并运行 Web
 
-### 本地 API 模式
-
-适合开发和真实本机使用。Node server 提供 API、SSE 和前端静态文件，数据写入本地 SQLite。
+Node server 会自动初始化 SQLite，同时提供 API、SSE 和构建后的前端资源：
 
 ```bash
 pnpm install
-pnpm db:init
-pnpm api
-pnpm dev
+pnpm build
+pnpm web
 ```
 
-开发地址：
-
-```text
-http://127.0.0.1:5173
-```
-
-API 默认地址：
+默认会打开：
 
 ```text
 http://127.0.0.1:8787
 ```
 
-### 静态本地模式
-
-当前端无法连接 API 时会自动进入 `Static Local`。数据优先保存到浏览器 IndexedDB，并用 `localStorage` 作为兼容兜底。该模式适合演示、轻量个人工作台和离线原型，但不能直接执行本机 CLI、访问 SQLite 或运行 MCP stdio server。
+使用 `pnpm web --no-open` 可只启动服务，`--port 8080` 可修改端口。开发时仍可分别运行 `pnpm api` 与 `pnpm dev` 使用 Vite HMR。
 
 ## 常用命令
 
@@ -52,7 +37,8 @@ pnpm api          # 启动本地 API
 pnpm dev          # 启动前端开发服务
 pnpm lint         # TypeScript 类型检查
 pnpm build        # 构建前端
-pnpm start        # 生产模式运行 API + dist
+pnpm web          # 运行构建后的 Web 并打开浏览器
+pnpm start        # 运行 Web 但不打开浏览器
 pnpm package      # 构建并打包本地 release
 ```
 
@@ -64,15 +50,19 @@ agent-workbench/
   plugins/         Workflow Plugin 示例
   scripts/         本地打包脚本
   server/          本地 API、SQLite、SSE 和静态服务
-    db/            SQLite prepared statements 与后续 repository 边界
+    application.mjs 应用依赖装配与 API composition
+    connectors/    可注册 CLI / MCP providers
+    db/            SQLite schema 与 prepared statements
     harness/       Capability、Event Bus 与 Policy pipeline
     plugins/       Runtime 与 Catalog capability providers
+    repositories/  SQLite row mappers
+    services/      Run Event、Approval 与 Artifact 服务
     transport/     HTTP body、CORS response 与静态文件传输
   skills/          Skill 示例
   src/             React + Ant Design 前端
+    app/           Session / Composer / Details 应用壳
     domain/        Workbench 领域模型
-    features/      Workflow 等页面领域逻辑
-    infrastructure/ API 映射与静态工作区持久化
+    features/      可独立测试的 Workflow 领域算法
 ```
 
 ## 文档
@@ -81,7 +71,8 @@ agent-workbench/
 - [产品概览](docs/product/product-brief.md)
 - [需求说明](docs/product/requirements.md)
 - [完整 PRD](docs/product/prd.md)
-- [架构文档](docs/architecture/architecture.md)
+- [当前架构概览](docs/architecture/architecture-summary.md)
+- [Harness 重构说明](docs/architecture/harness-refactor.md)
 - [设计文档](docs/design/design-brief.md)
 - [后端 API](docs/technical/backend-api.md)
 
@@ -91,7 +82,7 @@ agent-workbench/
 - 低风险 CLI 会真实执行，请只登记可信命令。
 - 中高风险 MCP / CLI 调用会进入审批队列。
 - Secret 管理只登记环境变量名，不保存真实密钥。
-- 静态本地模式的数据保存在当前浏览器，清缓存或换浏览器前请先导出工作区 JSON。
+- Web 不再维护浏览器静态副本；连接失败时会明确提示启动 `pnpm web`，避免产生两套状态。
 
 ## Harness 扩展
 

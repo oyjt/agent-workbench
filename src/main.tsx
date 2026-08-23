@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import App from "./App";
+import App from "./app/session-app";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -11,8 +11,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       locale={zhCN}
       theme={{
         token: {
-          colorPrimary: "#1677ff",
-          borderRadius: 8,
+          colorPrimary: "#2563eb",
+          borderRadius: 10,
           fontFamily:
             'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
         },

@@ -1,5 +1,17 @@
 # 产品架构方案
 
+> 文档定位：本文保留产品目标和中长期架构蓝图。当前已经落地的模块边界、执行管线和限制以[当前架构概览](architecture-summary.md)、[Harness 重构说明](harness-refactor.md)和[后端 API](../technical/backend-api.md)为准。
+
+## 当前实现基线（2026-08-24）
+
+- 前端已收敛为 `src/app/session-app.tsx`：Session rail、Composer、Execution stream 与 Details；高级能力统一放入 Settings。
+- 已删除自动 Static Local、内置假数据和十个一级管理页面，前端状态只来自本地 API 与 SSE。
+- 后端入口与应用装配分离，schema、statements、row mapper、services、transport、plugins 和 connector providers 已模块化。
+- Runtime/Catalog 使用 Harness plugin 注册；CLI/MCP 使用 Connector Provider Registry 注册。
+- Capability 执行统一经过 Policy → Approval → Provider，并支持审批后从 SQLite 恢复待执行调用。
+- Run Event 持久化到 SQLite，通过 JSON/SSE 向运行控制台和审计视图提供同一事件流。
+- 本文中的远程 Runner Pool、多用户 Control Plane、完整 Runtime Worker 等仍属于后续蓝图。
+
 ## 1. 架构目标
 
 Agent Workbench 的架构目标是把不同 Agent 执行器统一纳入一个可观测、可审批、可扩展的工作台，而不是将所有能力写入一个单体进程。

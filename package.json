@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "api": "node --disable-warning=ExperimentalWarning server/index.mjs",
-    "start": "node --disable-warning=ExperimentalWarning server/index.mjs",
+    "web": "node --disable-warning=ExperimentalWarning server/web.mjs",
+    "start": "pnpm web --no-open",
     "db:init": "node --disable-warning=ExperimentalWarning server/index.mjs --init",
     "build": "tsc -b && vite build",
     "build:pages": "GITHUB_PAGES=true pnpm build",
