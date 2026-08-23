@@ -13,7 +13,9 @@
     "build:pages": "GITHUB_PAGES=true pnpm build",
     "package": "pnpm build && node scripts/package.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "lint": "tsc -b --pretty false"
+    "lint": "tsc -b --pretty false",
+    "test": "node --test server/**/*.test.mjs",
+    "verify": "pnpm lint && pnpm test && pnpm build"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
