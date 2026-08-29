@@ -42,6 +42,7 @@ Agent Workbench 是本地优先的通用 Agent 工作台。用户从任务目标
 
 - 产品名称：Agent Workbench / 智能体工作台。
 - 现有产品语言直接、克制、任务导向，不虚构模型能力、运行结果或外部证明。
+- 主工作区采用用户确认的标准 AI 写作工作台范式，并以 ChatGPT 的低学习成本、持续对话和内容优先体验作为工艺基准；运行日志与工具记录不得混入写作正文。
 - 现有技术栈为 React、Ant Design、TypeScript 和 Vite；该事实不是永久视觉约束，但后续工作应尊重真实的平台能力。
 
 ## Evidence on Hand
