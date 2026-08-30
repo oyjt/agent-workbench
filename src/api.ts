@@ -30,6 +30,7 @@ export type ApiAgent = {
   name: string;
   description: string;
   runtime: string;
+  modelProviderId: string;
   model: string;
   systemPrompt: string;
   skillIds: string[];
@@ -164,13 +165,15 @@ export type ApiWorkflow = {
   updatedAt: string;
 };
 
-export type ApiSecret = {
+export type ApiModelProvider = {
   id: string;
   name: string;
-  scope: string;
-  envVar: string;
-  status: "available" | "missing";
-  valuePreview: string;
+  baseUrl: string;
+  requiresApiKey: boolean;
+  defaultModel: string;
+  isDefault: boolean;
+  enabled: boolean;
+  credentialStatus: "available" | "missing" | "not_required";
   createdAt: string;
   updatedAt: string;
 };
@@ -211,6 +214,10 @@ export async function startApiTask(taskId: string) {
   });
 }
 
+export function stopApiRun(runId: string) {
+  return requestJson<{ ok: boolean; stopped: boolean; runId: string }>(`/api/runs/${runId}/stop`, { method: "POST" });
+}
+
 export async function listApiTasks() {
   return requestJson<{ tasks: ApiTask[] }>("/api/tasks");
 }
@@ -223,7 +230,7 @@ export async function listApiAgents() {
   return requestJson<{ agents: ApiAgent[] }>("/api/agents");
 }
 
-export function createApiAgent(payload: Pick<ApiAgent, "name" | "description" | "runtime" | "model" | "systemPrompt" | "skillIds" | "knowledgeScope" | "permissionProfile">) {
+export function createApiAgent(payload: Pick<ApiAgent, "name" | "description" | "runtime" | "modelProviderId" | "model" | "systemPrompt" | "skillIds" | "knowledgeScope" | "permissionProfile">) {
   return postJson<{ agent: ApiAgent }>("/api/agents", payload);
 }
 
@@ -276,12 +283,16 @@ export function createApiWorkflow(payload: Pick<ApiWorkflow, "name" | "descripti
   return postJson<{ workflow: ApiWorkflow }>("/api/workflows", payload);
 }
 
-export async function listApiSecrets() {
-  return requestJson<{ secrets: ApiSecret[] }>("/api/secrets");
+export async function listApiModelProviders() {
+  return requestJson<{ providers: ApiModelProvider[] }>("/api/model-providers");
 }
 
-export function createApiSecret(payload: { name: string; scope: string; envVar: string }) {
-  return postJson<{ secret: ApiSecret }>("/api/secrets", payload);
+export function createApiModelProvider(payload: { name: string; baseUrl: string; defaultModel: string; apiKey?: string; noAuth: boolean; isDefault: boolean }) {
+  return postJson<{ provider: ApiModelProvider }>("/api/model-providers", payload);
+}
+
+export function checkApiModelProvider(providerId: string) {
+  return requestJson<{ ok: boolean; status: string; requestId?: string }>(`/api/model-providers/${providerId}/check`, { method: "POST" });
 }
 
 export async function scanApiSkills() {

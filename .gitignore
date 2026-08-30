@@ -7,3 +7,5 @@ dist
 *.log
 coverage
 .agent-workbench
+.impeccable
+.pnpm-store

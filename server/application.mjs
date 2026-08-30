@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -10,6 +10,7 @@ import { createRowMappers } from "./repositories/row-mappers.mjs";
 import { createRunEventService } from "./services/run-events.mjs";
 import { createApprovalService } from "./services/approvals.mjs";
 import { createArtifactService } from "./services/artifacts.mjs";
+import { chatCompletionsUrl, createChatCompletion, ModelRequestError } from "./services/openai-compatible.mjs";
 import { AgentHarness } from "./harness/core.mjs";
 import { CapabilityApprovalRequired, createRiskPolicy, executeCapability } from "./harness/policy.mjs";
 import { createCatalogPlugin } from "./plugins/catalog.mjs";
@@ -20,6 +21,7 @@ import { createStaticHandler, readJson, readTextOrJson, sendEmpty, sendJson, sen
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = process.env.AGENT_WORKBENCH_DATA_DIR ?? resolve(projectRoot, ".agent-workbench", "data");
 const dbPath = resolve(dataDir, "workbench.sqlite");
+const credentialDir = resolve(dataDir, "credentials");
 const artifactRoot = resolve(projectRoot, ".agent-workbench", "artifacts");
 const distDir = resolve(projectRoot, "dist");
 const port = Number(process.env.AGENT_WORKBENCH_API_PORT ?? 8787);
@@ -28,6 +30,7 @@ const harness = new AgentHarness();
 const harnessPolicy = createRiskPolicy();
 const serveStatic = createStaticHandler(distDir);
 const connectorProviders = createDefaultConnectorProviders({ projectRoot, spawnSync, callMcpStdio });
+const activeGenerations = new Map();
 
 await harness.use(runtimePlugin);
 await harness.use(createCatalogPlugin(projectRoot));
@@ -35,21 +38,30 @@ await harness.use(createCatalogPlugin(projectRoot));
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(artifactRoot, { recursive: true });
 
+if (process.argv.includes("--reset")) {
+  for (const suffix of ["", "-shm", "-wal"]) rmSync(`${dbPath}${suffix}`, { force: true });
+  rmSync(credentialDir, { recursive: true, force: true });
+}
+
+mkdirSync(credentialDir, { recursive: true, mode: 0o700 });
+chmodSync(credentialDir, 0o700);
+
 const db = new DatabaseSync(dbPath, { timeout: 5000 });
 initializeDatabase(db);
 
 const {
   insertTask, insertRun, insertEvent, listTasks, deleteTask, deleteApprovalsByTask, deleteArtifactsByTask, listEvents, getRun, getTask, getLatestRunByTask,
-  getPendingApprovalByTask, updateTaskStatusStatement, updateRunStatusStatement, insertAgent, listAgents,
+  getPendingApprovalByTask, updateTaskStatusStatement, updateRunStatusStatement, insertAgent, listAgents, getAgent,
   updateAgentStatusStatement, insertKnowledgeItem, listKnowledgeItems, insertConnector, listConnectors,
   updateConnectorStatusStatement, getConnector, getTeam, insertApproval, listApprovals, listApprovalsByStatus,
   getApproval, updateApprovalStatusStatement, insertTeam, insertTeamMember, listTeams, listTeamMembers,
   insertPendingCapabilityExecution, getPendingCapabilityExecution, completePendingCapabilityExecution,
   insertArtifact, listArtifacts, getArtifact, updateArtifactPathStatement, insertArtifactVersion,
   listArtifactVersions, getLatestArtifactVersion, countArtifactVersions, insertWorkflow, listWorkflows,
-  getWorkflow, insertSecret, listSecrets, deleteSecret,
+  getWorkflow, insertModelProvider, listModelProviders, getModelProvider, getDefaultModelProvider,
+  clearDefaultModelProviders, deleteModelProvider,
 } = createStatements(db);
-const { taskFromRow, agentFromRow, knowledgeFromRow, connectorFromRow, approvalFromRow, teamFromRow, artifactFromRow, workflowFromRow, artifactVersionFromRow, secretFromRow, eventFromRow } = createRowMappers(listTeamMembers);
+const { taskFromRow, agentFromRow, knowledgeFromRow, connectorFromRow, approvalFromRow, teamFromRow, artifactFromRow, workflowFromRow, artifactVersionFromRow, modelProviderFromRow, eventFromRow } = createRowMappers(listTeamMembers, hasModelCredential);
 const artifactService = createArtifactService({
   projectRoot,
   statements: { insertArtifact, getArtifact, insertArtifactVersion, countArtifactVersions, updateArtifactPathStatement, getLatestArtifactVersion, listArtifactVersions },
@@ -163,6 +175,13 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && taskStartMatch) {
       const result = await startTask(taskStartMatch[1]);
       sendJson(response, 200, result);
+      return;
+    }
+
+    const runStopMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/stop$/);
+    if (request.method === "POST" && runStopMatch) {
+      const result = stopGeneration(runStopMatch[1]);
+      sendJson(response, result.stopped ? 200 : 409, result);
       return;
     }
 
@@ -319,21 +338,28 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (request.method === "GET" && url.pathname === "/api/secrets") {
-      sendJson(response, 200, { secrets: listSecrets.all().map(secretFromRow) });
+    if (request.method === "GET" && url.pathname === "/api/model-providers") {
+      sendJson(response, 200, { providers: listModelProviders.all().map(modelProviderFromRow) });
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/api/secrets") {
+    if (request.method === "POST" && url.pathname === "/api/model-providers") {
       const body = await readJson(request);
-      const secret = createSecret(body);
-      sendJson(response, 201, { secret });
+      const provider = createModelProvider(body);
+      sendJson(response, 201, { provider });
       return;
     }
 
-    const secretDeleteMatch = url.pathname.match(/^\/api\/secrets\/([^/]+)$/);
-    if (request.method === "DELETE" && secretDeleteMatch) {
-      deleteSecret.run(secretDeleteMatch[1]);
+    const providerCheckMatch = url.pathname.match(/^\/api\/model-providers\/([^/]+)\/check$/);
+    if (request.method === "POST" && providerCheckMatch) {
+      sendJson(response, 200, await checkModelProvider(providerCheckMatch[1]));
+      return;
+    }
+
+    const providerDeleteMatch = url.pathname.match(/^\/api\/model-providers\/([^/]+)$/);
+    if (request.method === "DELETE" && providerDeleteMatch) {
+      deleteModelProvider.run(providerDeleteMatch[1]);
+      rmSync(modelCredentialPath(providerDeleteMatch[1]), { force: true });
       sendJson(response, 200, { ok: true });
       return;
     }
@@ -470,12 +496,16 @@ function createTask(body) {
 
 function createAgent(body) {
   const now = new Date().toISOString();
+  const modelProviderId = requiredString(body.modelProviderId, "modelProviderId");
+  const provider = getModelProvider.get(modelProviderId);
+  if (!provider) throw new Error("model_provider_not_found");
   const agent = {
     id: createId("agent"),
     name: requiredString(body.name, "name"),
     description: requiredString(body.description, "description"),
     runtime: stringOr(body.runtime, "Codex"),
-    model: stringOr(body.model, "gpt-5.4"),
+    modelProviderId,
+    model: stringOr(body.model, provider.default_model),
     systemPrompt: stringOr(body.systemPrompt, ""),
     skillIds: Array.isArray(body.skillIds) ? body.skillIds : [],
     knowledgeScope: stringOr(body.knowledgeScope, "项目知识库"),
@@ -490,6 +520,7 @@ function createAgent(body) {
     agent.name,
     agent.description,
     agent.runtime,
+    agent.modelProviderId,
     agent.model,
     agent.systemPrompt,
     JSON.stringify(agent.skillIds),
@@ -624,21 +655,53 @@ function ensureWorkflow(workflowId) {
   return workflow;
 }
 
-function createSecret(body) {
+function createModelProvider(body) {
   const now = new Date().toISOString();
-  const envVar = requiredString(body.envVar, "envVar");
-  const secret = {
-    id: createId("secret"),
+  const baseUrl = requiredString(body.baseUrl, "baseUrl").replace(/\/$/, "");
+  chatCompletionsUrl(baseUrl);
+  const authType = body.noAuth ? "none" : "bearer";
+  const apiKey = authType === "bearer" ? requiredString(body.apiKey, "apiKey") : null;
+  const provider = {
+    id: createId("provider"),
     name: requiredString(body.name, "name"),
-    scope: stringOr(body.scope, "workspace"),
-    envVar,
-    status: process.env[envVar] ? "available" : "missing",
+    baseUrl,
+    authType,
+    defaultModel: requiredString(body.defaultModel, "defaultModel"),
+    isDefault: Boolean(body.isDefault) || !getDefaultModelProvider.get(),
+    enabled: true,
     createdAt: now,
     updatedAt: now,
   };
 
-  insertSecret.run(secret.id, secret.name, secret.scope, secret.envVar, secret.status, secret.createdAt, secret.updatedAt);
-  return secret;
+  db.exec("BEGIN");
+  try {
+    if (provider.isDefault) clearDefaultModelProviders.run(now);
+    insertModelProvider.run(provider.id, provider.name, provider.baseUrl, provider.authType, provider.defaultModel, provider.isDefault ? 1 : 0, 1, provider.createdAt, provider.updatedAt);
+    if (apiKey) writeModelCredential(provider.id, apiKey);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    rmSync(modelCredentialPath(provider.id), { force: true });
+    throw error;
+  }
+  return modelProviderFromRow(getModelProvider.get(provider.id));
+}
+
+async function checkModelProvider(providerId) {
+  const provider = getModelProvider.get(providerId);
+  if (!provider) throw new Error("model_provider_not_found");
+  const apiKey = provider.auth_type === "bearer" ? readModelCredential(provider.id) : undefined;
+  if (provider.auth_type === "bearer" && !apiKey) throw new Error("model_api_key_missing");
+  const result = await createChatCompletion({
+    baseUrl: provider.base_url,
+    authType: provider.auth_type,
+    apiKey,
+    model: provider.default_model,
+    messages: [{ role: "user", content: "请只回复：连接成功" }],
+    stream: false,
+    signal: AbortSignal.timeout(30_000),
+  });
+  return { ok: true, status: "available", requestId: result.requestId };
 }
 
 function runWorkflow(workflowId, body = {}) {
@@ -763,8 +826,23 @@ async function startTask(taskId) {
     runAgentTeam(run.id, task.target_id);
   } else {
     appendEvent(run.id, "agent.started", { agentId: task.target_id, runtime: task.runtime });
-    try { await appendAssistantReply(task, run.id); }
-    catch (error) { appendAssistantError(run.id, error); }
+    try {
+      const reply = await appendAssistantReply(task, run.id);
+      if (reply.type === "runtime.unconfigured") {
+        appendEvent(run.id, "agent.completed", { agentId: task.target_id });
+        updateTaskAndRunStatus(taskId, "failed");
+        return { ok: false, status: "failed", runId: run.id };
+      }
+      if (reply.payload?.stopped) {
+        appendEvent(run.id, "agent.completed", { agentId: task.target_id, stopped: true });
+        return { ok: true, status: "paused", runId: run.id };
+      }
+    } catch (error) {
+      appendAssistantError(run.id, error);
+      appendEvent(run.id, "agent.completed", { agentId: task.target_id });
+      updateTaskAndRunStatus(taskId, "failed");
+      return { ok: false, status: "failed", runId: run.id };
+    }
     appendEvent(run.id, "agent.completed", { agentId: task.target_id });
   }
 
@@ -778,11 +856,13 @@ async function continueConversation(runId) {
   if (!task) throw new Error("task_not_found");
   updateTaskAndRunStatus(task.id, "running");
   try {
-    return await appendAssistantReply(task, runId);
+    const reply = await appendAssistantReply(task, runId);
+    if (!reply.payload?.stopped) updateTaskAndRunStatus(task.id, reply.type === "runtime.unconfigured" ? "failed" : "done");
+    return reply;
   } catch (error) {
-    return appendAssistantError(runId, error);
-  } finally {
-    updateTaskAndRunStatus(task.id, "done");
+    const event = appendAssistantError(runId, error);
+    updateTaskAndRunStatus(task.id, "failed");
+    return event;
   }
 }
 
@@ -792,8 +872,11 @@ function appendAssistantError(runId, error) {
 }
 
 async function appendAssistantReply(task, runId) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return appendEvent(runId, "runtime.unconfigured", { role: "assistant", text: "尚未配置 DEEPSEEK_API_KEY。请先设置环境变量并重启本地 Web 服务。" });
+  const config = resolveTaskModel(task);
+  if (!config) return appendEvent(runId, "runtime.unconfigured", { role: "assistant", text: "尚未配置默认模型连接。请先在设置中添加一个 OpenAI 兼容连接。" });
+  const { agent, provider } = config;
+  const apiKey = provider.auth_type === "bearer" ? readModelCredential(provider.id) : undefined;
+  if (provider.auth_type === "bearer" && !apiKey) return appendEvent(runId, "runtime.unconfigured", { role: "assistant", text: `模型连接“${provider.name}”缺少 API Key。请重新添加连接。` });
 
   const history = listEvents.all(runId).map(eventFromRow).flatMap((event) => {
     const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
@@ -801,45 +884,61 @@ async function appendAssistantReply(task, runId) {
     if (event.type === "assistant.message" && typeof payload.text === "string") return [{ role: "assistant", content: payload.text }];
     return [];
   });
-  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-  const messages = [{ role: "system", content: "你是 Agent Workbench 中的助理。请使用简体中文，直接、清晰地帮助用户完成任务。" }, { role: "user", content: task.prompt }, ...history];
+  const model = agent?.model || provider.default_model;
+  const systemPrompt = agent?.system_prompt || "你是 Agent Workbench 中的助理。请使用简体中文，直接、清晰地帮助用户完成任务。";
+  const messages = [{ role: "system", content: systemPrompt }, { role: "user", content: task.prompt }, ...history];
   const messageId = createId("message");
-  appendEvent(runId, "model.started", { provider: "deepseek", model, messageId });
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ model, messages, thinking: { type: "disabled" }, stream: true }),
-  });
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 300);
-    appendEvent(runId, "model.failed", { provider: "deepseek", status: response.status, detail });
-    throw new Error(`deepseek_request_failed_${response.status}`);
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("deepseek_stream_unavailable");
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let text = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ") || line === "data: [DONE]\r") continue;
-      try {
-        const delta = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content;
-        if (typeof delta === "string" && delta) {
-          text += delta;
-          appendEvent(runId, "assistant.delta", { role: "assistant", messageId, text });
-        }
-      } catch { /* ignore incomplete provider frames */ }
+  const controller = new AbortController();
+  let streamedText = "";
+  activeGenerations.set(runId, { controller, taskId: task.id });
+  appendEvent(runId, "model.started", { providerId: provider.id, provider: provider.name, model, messageId });
+  try {
+    const result = await createChatCompletion({
+      baseUrl: provider.base_url,
+      authType: provider.auth_type,
+      apiKey,
+      model,
+      messages,
+      onDelta: (text) => { streamedText = text; appendEvent(runId, "assistant.delta", { role: "assistant", messageId, text }); },
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]),
+    });
+    return appendEvent(runId, "assistant.message", { role: "assistant", messageId, text: result.text, model, providerId: provider.id, requestId: result.requestId });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      appendEvent(runId, "model.stopped", { providerId: provider.id, provider: provider.name, model, messageId });
+      return appendEvent(runId, "assistant.message", { role: "assistant", messageId, text: streamedText || "已停止生成。", model, providerId: provider.id, stopped: true });
     }
-    if (done) break;
+    const failure = error instanceof ModelRequestError ? error : new ModelRequestError("model_request_failed");
+    appendEvent(runId, "model.failed", { providerId: provider.id, provider: provider.name, model, status: failure.status, detail: failure.detail, requestId: failure.requestId });
+    throw failure;
+  } finally {
+    if (activeGenerations.get(runId)?.controller === controller) activeGenerations.delete(runId);
   }
-  if (!text.trim()) throw new Error("deepseek_empty_response");
-  return appendEvent(runId, "assistant.message", { role: "assistant", messageId, text: text.trim(), model });
+}
+
+function stopGeneration(runId) {
+  const active = activeGenerations.get(runId);
+  if (!active) return { ok: false, stopped: false, error: "generation_not_running" };
+  active.controller.abort();
+  updateTaskAndRunStatus(active.taskId, "paused");
+  return { ok: true, stopped: true, runId };
+}
+
+function resolveTaskModel(task) {
+  const agent = task.target_type === "agent" && task.target_id !== "local" ? getAgent.get(task.target_id) : null;
+  if (task.target_type === "agent" && task.target_id !== "local" && !agent) throw new Error("agent_not_found");
+  const provider = agent ? getModelProvider.get(agent.model_provider_id) : getDefaultModelProvider.get();
+  if (!provider || !provider.enabled) return null;
+  return { agent, provider };
+}
+
+function modelCredentialPath(providerId) { return resolve(credentialDir, `${providerId}.key`); }
+function hasModelCredential(providerId) { return existsSync(modelCredentialPath(providerId)); }
+function readModelCredential(providerId) { return hasModelCredential(providerId) ? readFileSync(modelCredentialPath(providerId), "utf8").trim() : undefined; }
+function writeModelCredential(providerId, apiKey) {
+  const path = modelCredentialPath(providerId);
+  writeFileSync(path, apiKey, { encoding: "utf8", mode: 0o600 });
+  chmodSync(path, 0o600);
 }
 
 function runAgentTeam(runId, teamId) {

@@ -1,6 +1,11 @@
-export const schemaTables = ["tasks", "runs", "events", "agents", "knowledge_items", "connectors", "approvals", "pending_capability_executions", "agent_teams", "artifacts", "artifact_versions", "workflows", "secrets"];
+export const schemaTables = ["tasks", "runs", "events", "model_providers", "agents", "knowledge_items", "connectors", "approvals", "pending_capability_executions", "agent_teams", "artifacts", "artifact_versions", "workflows"];
 
 export function initializeDatabase(db) {
+  const agentColumns = db.prepare("PRAGMA table_info(agents)").all().map((row) => row.name);
+  if (agentColumns.length && !agentColumns.includes("model_provider_id")) {
+    throw new Error("database_schema_incompatible: agents.model_provider_id is missing; back up local data and run pnpm db:reset");
+  }
+
   db.exec(`
     PRAGMA foreign_keys = ON;
     PRAGMA journal_mode = WAL;
@@ -17,10 +22,18 @@ export function initializeDatabase(db) {
       id TEXT PRIMARY KEY, run_id TEXT NOT NULL, type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
       FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS model_providers (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, base_url TEXT NOT NULL,
+      auth_type TEXT NOT NULL CHECK (auth_type IN ('bearer', 'none')),
+      default_model TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS agents (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, runtime TEXT NOT NULL, model TEXT NOT NULL,
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, runtime TEXT NOT NULL,
+      model_provider_id TEXT NOT NULL, model TEXT NOT NULL,
       system_prompt TEXT NOT NULL, skill_ids TEXT NOT NULL, knowledge_scope TEXT NOT NULL, permission_profile TEXT NOT NULL,
-      status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      FOREIGN KEY (model_provider_id) REFERENCES model_providers(id) ON DELETE RESTRICT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS knowledge_items (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, type TEXT NOT NULL, content TEXT NOT NULL, tags TEXT NOT NULL,
@@ -60,14 +73,11 @@ export function initializeDatabase(db) {
       id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, provider TEXT NOT NULL, concurrency INTEGER NOT NULL,
       tags TEXT NOT NULL, steps TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     ) STRICT;
-    CREATE TABLE IF NOT EXISTS secrets (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, scope TEXT NOT NULL, env_var TEXT NOT NULL, status TEXT NOT NULL,
-      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-    ) STRICT;
     CREATE INDEX IF NOT EXISTS idx_runs_task_id ON runs(task_id);
     CREATE INDEX IF NOT EXISTS idx_events_run_id_created_at ON events(run_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
     CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
     CREATE INDEX IF NOT EXISTS idx_artifact_versions_artifact_id ON artifact_versions(artifact_id, version);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_model_providers_default ON model_providers(is_default) WHERE is_default = 1;
   `);
 }

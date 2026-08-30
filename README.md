@@ -27,15 +27,7 @@ pnpm web
 http://127.0.0.1:8787
 ```
 
-启动前设置 DeepSeek API 密钥即可启用真实的流式多轮对话：
-
-```bash
-export DEEPSEEK_API_KEY="你的密钥"
-export DEEPSEEK_MODEL="deepseek-v4-flash" # 可选
-pnpm web
-```
-
-密钥只从当前进程环境读取，不写入 SQLite。未配置时，页面会显示明确提示，不会生成模拟回复。
+模型连接通过 Settings 配置，支持实现 OpenAI Chat Completions 协议的云端或本地服务。启动后在“设置 → 模型连接”填写连接名称、Base URL、默认模型和 API Key；本地无鉴权服务可打开“此服务无需 API Key”。密钥保存在权限受限的本地凭据文件中，不写入 SQLite，也不会通过设置接口返回。
 
 使用 `pnpm web --no-open` 可只启动服务，`--port 8080` 可修改端口。开发时仍可分别运行 `pnpm api` 与 `pnpm dev` 使用 Vite HMR。
 
@@ -43,6 +35,7 @@ pnpm web
 
 ```bash
 pnpm db:init      # 初始化本地 SQLite schema
+pnpm db:reset     # 删除本地 SQLite 数据并按当前 schema 重建
 pnpm api          # 启动本地 API
 pnpm dev          # 启动前端开发服务
 pnpm lint         # TypeScript 类型检查
@@ -91,7 +84,7 @@ agent-workbench/
 - 当前定位是本地单用户工作台，不包含远程登录、多租户和服务端会话。
 - 低风险 CLI 会真实执行，请只登记可信命令。
 - 中高风险 MCP / CLI 调用会进入审批队列。
-- Secret 管理只登记环境变量名，不保存真实密钥。
+- 模型连接的 API Key 保存在本地受限凭据文件中，不写入 SQLite。
 - Web 不再维护浏览器静态副本；连接失败时会明确提示启动 `pnpm web`，避免产生两套状态。
 
 ## Harness 扩展

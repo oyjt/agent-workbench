@@ -9,7 +9,7 @@
 - Step 重跑与 feedback 返工：`POST /api/workflows/:workflowId/run` 支持 `fromStepId` 和 `feedback`。
 - MCP stdio 最小 client：支持 `initialize`、`tools/list` 和 `tools/call`。
 - IndexedDB 离线工作区：Static Local Mode 优先使用 IndexedDB，并保留 `localStorage` 兼容兜底。
-- Secret 引用管理：新增 `/api/secrets`，只保存环境变量名和状态，不保存真实密钥明文。
+- 模型连接管理：新增 `/api/model-providers`，保存 OpenAI 兼容服务配置；API Key 存在本机受限凭据文件中，不写入 SQLite。
 - 本地团队权限策略：设置页展示 Owner、Operator、Reviewer、Viewer 的本地权限边界。
 - 前端交互：工作流页支持运行、导入 YAML、导出 YAML、指定 step 重跑、带反馈返工；资产页支持查看、下载、新增版本和批量导出。
 
@@ -29,11 +29,12 @@ node --check server/index.mjs
 - `POST /api/workflows/import`
 - `POST /api/workflows/:workflowId/run`
 - `GET /api/runs/:runId/events.json`
-- `POST /api/secrets`
+- `POST /api/model-providers`
+- `POST /api/model-providers/:providerId/check`
 
 ## 当前边界
 
-- Runtime Adapter 仍是本地模拟执行器，还没有接入真实模型运行队列。
+- 模型运行链路已接入 OpenAI 兼容 Chat Completions API；当前不覆盖厂商私有协议或 Responses API。
 - MCP HTTP endpoint 仅登记和标记，当前真实调用覆盖 stdio transport。
 - Workflow DAG 现在按 layer 顺序执行，尚未做真实并发 worker 调度。
 - 当前是本地单用户工作台；多用户登录、团队空间和远程权限后端属于后续扩展。

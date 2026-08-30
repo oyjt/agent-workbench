@@ -27,13 +27,13 @@ Agent Workbench 是本地优先的通用 Agent 工作台。用户从任务目标
 - 单用户在本机项目工作区中运行 Web 控制台。
 - 左侧管理 Workspace 与历史 Session，中间持续处理目标，右侧查看 Run、Files 和 Context。
 - Settings 管理 Agent、Team、Skills、Plugins、Knowledge、Workflow、Connector、Model 与 Permission。
-- Node 本地服务提供 API、SSE 和静态资源，SQLite 保存核心业务状态；DeepSeek 密钥由进程环境提供。
+- Node 本地服务提供 API、SSE 和静态资源，SQLite 保存核心业务状态；模型通过 OpenAI-compatible Chat Completions 连接，API Key 保存于本机受限凭据文件。
 
 ## Capabilities and Constraints
 
 - 核心对象包括 Task、Run、Agent、Agent Team、Skill、Workflow Plugin、Knowledge Item、Connector、Approval 和 Artifact。
 - CLI 与 MCP 调用经过 Capability、Policy 和 Approval 管线；中高风险动作必须可见、可拒绝、可审计。
-- Secret 只保存环境变量引用及可用状态，不保存真实密钥。
+- API Key 不写入 SQLite，也不通过设置接口返回；本地无鉴权模型服务可显式跳过密钥。
 - 当前范围是本地单用户工作台，不包含远程登录、多租户、分布式任务队列或云端 Secret 托管。
 - Web 使用同一 API 与 SQLite 数据源，不维护浏览器静态状态副本。
 - 界面与文档默认使用简体中文；Agent、Skill、Workflow、MCP、CLI 等产品术语可保留英文。

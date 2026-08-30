@@ -26,6 +26,8 @@ http://127.0.0.1:8787
 pnpm db:init
 ```
 
+该命令不会覆盖已有数据库。若开发库来自不兼容的旧 schema，先备份需要保留的数据，再显式执行 `pnpm db:reset` 重建；项目不提供旧 schema 迁移。
+
 会创建这些表：
 
 - `tasks`
@@ -41,7 +43,7 @@ pnpm db:init
 - `artifacts`
 - `artifact_versions`
 - `workflows`
-- `secrets`
+- `model_providers`
 
 ## 核心端点
 
@@ -166,13 +168,14 @@ MCP stdio 连接器支持最小 JSON-RPC client：
 
 每次运行会创建一个 workflow task、run events 和 workflow artifact。
 
-### Secrets
+### Model Providers
 
-- `GET /api/secrets`
-- `POST /api/secrets`
-- `DELETE /api/secrets/:secretId`
+- `GET /api/model-providers`
+- `POST /api/model-providers`
+- `POST /api/model-providers/:providerId/check`
+- `DELETE /api/model-providers/:providerId`
 
-Secret 管理只保存环境变量引用，例如 `OPENAI_API_KEY`，返回 `available` / `missing` 状态和脱敏预览，不保存真实密钥明文。
+模型连接保存 OpenAI-compatible Base URL、默认模型和是否需要 API Key。API Key 写入本机权限受限的凭据文件，不进入 SQLite；设置接口只返回 `available` / `missing` / `not_required` 状态，不返回密钥。
 
 ## 生产静态服务
 
@@ -192,5 +195,5 @@ http://127.0.0.1:8787
 - MCP stdio 已支持最小协议调用；HTTP MCP endpoint 当前只登记，不执行远程调用。
 - Artifact 已落库并写入本地版本目录，尚未实现全文检索、引用图谱和外部对象存储。
 - Workflow 已支持 YAML、DAG 执行、指定 step 重跑和 feedback 返工；尚未实现真实并发调度和长任务队列。
-- 当前是本地单用户工作台，Secret 以环境变量引用方式管理，不提供远程登录和多租户会话。
+- 当前是本地单用户工作台，模型密钥以环境变量引用方式管理，不提供远程登录和多租户会话。
 - `node:sqlite` 在当前 Node 版本仍属于实验能力，脚本里已隐藏 ExperimentalWarning。

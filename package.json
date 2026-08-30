@@ -10,6 +10,7 @@
     "web": "node --disable-warning=ExperimentalWarning server/web.mjs",
     "start": "pnpm web --no-open",
     "db:init": "node --disable-warning=ExperimentalWarning server/index.mjs --init",
+    "db:reset": "node --disable-warning=ExperimentalWarning server/index.mjs --init --reset",
     "build": "tsc -b && vite build",
     "build:pages": "GITHUB_PAGES=true pnpm build",
     "package": "pnpm build && node scripts/package.mjs",
@@ -20,6 +21,8 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
+    "@ant-design/x": "^2.5.0",
+    "@ant-design/x-markdown": "^2.5.0",
     "antd": "^6.5.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

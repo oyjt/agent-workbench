@@ -29,7 +29,7 @@ Agent Workbench 采用前后端轻量分层和可组合 Harness。前端是 Sess
 - Composer：目标输入、Agent preset 和访问策略选择。
 - Execution stream：用户消息、Run Event、Tool Call 与 Approval 内联展示。
 - Details：Run 状态、Produced Files 与当前 Context。
-- Settings：Agents、Capabilities、Knowledge、Workflows、Models/Secrets 与 Permissions 的渐进式配置入口。
+- Settings：Agents、Capabilities、Knowledge、Workflows、Model Providers 与 Permissions 的渐进式配置入口。
 
 ## 后端模块
 
@@ -38,14 +38,14 @@ Agent Workbench 采用前后端轻量分层和可组合 Harness。前端是 Sess
 - Plugins：Runtime discovery 和 Skill/Workflow Plugin catalog scan。
 - Connector Provider Registry：按 provider 注册 CLI、MCP stdio 和 MCP HTTP，实现层无中心 switch。
 - Services：Run Event、Approval、Artifact 等领域服务。
-- Repository / DB：schema、prepared statements 和 row mapper 分离；保存任务、运行、事件、Agent、Team、知识、连接器、审批、待执行 Capability、Artifact、Workflow 和 Secret 引用。
+- Repository / DB：schema、prepared statements 和 row mapper 分离；保存任务、运行、事件、Agent、Team、知识、连接器、审批、待执行 Capability、Artifact、Workflow 和模型连接。
 - Transport：REST、SSE、CORS、请求体解析和生产静态文件。
 
 ## 数据边界
 
 - SQLite 数据默认写入 `.agent-workbench/data/workbench.sqlite`。
 - Artifact 内容默认写入 `.agent-workbench/artifacts`。
-- Secret 只保存环境变量名、作用域和状态。
+- 模型连接的 API Key 保存于本机权限受限的凭据文件，不进入 SQLite 或设置接口响应。
 - 待审批调用保存在 `pending_capability_executions`，批准后可恢复原 Capability。
 - 前端只使用本地 API，不维护 IndexedDB/localStorage 业务副本。
 
