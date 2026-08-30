@@ -24,6 +24,7 @@ import {
   Empty,
   Input,
   Modal,
+  Result,
   Skeleton,
   Space,
   Tabs,
@@ -56,7 +57,6 @@ import {
 } from "../api";
 import type { ApiAgent, ApiAgentTeam, ApiApproval, ApiArtifact, ApiRunEvent, ApiTask } from "../api";
 import type { SettingsCatalog } from "./settings-drawer";
-import { nextStreamingText } from "../streaming";
 
 const { Text, Title, Paragraph } = Typography;
 const SettingsDrawer = lazy(() => import("./settings-drawer"));
@@ -240,8 +240,8 @@ export default function SessionApp() {
           {!loading && filteredTasks.length === 0 && query && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的对话" />}
         </div>
         <div className="sidebar-footer">
-          <button type="button" className="workspace-row" onClick={() => void openSettings()}><FolderOpenOutlined aria-hidden="true" /><span>agent-workbench</span><Badge status={connected === null ? "processing" : connected ? "success" : "error"} /></button>
-          <button type="button" className="settings-row" onClick={() => void openSettings()}><SettingOutlined aria-hidden="true" /><span>设置</span>{pendingCount > 0 && <Badge count={pendingCount} />}</button>
+          <Button type="text" block className="workspace-row" icon={<FolderOpenOutlined aria-hidden="true" />} onClick={() => void openSettings()}><span>agent-workbench</span><Badge status={connected === null ? "processing" : connected ? "success" : "error"} /></Button>
+          <Button type="text" block className="settings-row" icon={<SettingOutlined aria-hidden="true" />} onClick={() => void openSettings()}><span>设置</span>{pendingCount > 0 && <Badge count={pendingCount} />}</Button>
         </div>
       </aside>
 
@@ -251,7 +251,7 @@ export default function SessionApp() {
           <Space size={8}>{selectedTask && visibleTaskStatus && <Tag className={`task-status task-status-${visibleTaskStatus}`}>{statusMeta[visibleTaskStatus]?.label ?? visibleTaskStatus}</Tag>}<Button id="open-details" type="text" icon={<HistoryOutlined />} aria-label="打开活动面板" aria-expanded={detailsOpen} onClick={() => openDetails("activity")}>活动</Button></Space>
         </header>
         {connected === null ? <ConversationLoading /> : connected === false ? <ConnectionState onRetry={() => void loadWorkspace()} /> : selectedTask ? (
-          <div className="conversation-stage"><section ref={conversationRef} className="conversation" aria-label="对话内容" onScroll={(event) => { const element = event.currentTarget; const following = element.scrollHeight - element.scrollTop - element.clientHeight < 80; shouldFollowConversationRef.current = following; setFollowingConversation(following); }}><div className="conversation-inner"><ConversationBubbles task={selectedTask} events={messages} generating={generating} onStreamProgress={followLatest} />{selectedApprovals.map((approval) => <ApprovalMessage key={approval.id} approval={approval} onRespond={respond} />)}</div></section>{!followingConversation && <Button className="scroll-to-latest" shape="round" icon={<ArrowDownOutlined />} onClick={() => { shouldFollowConversationRef.current = true; setFollowingConversation(true); conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" }); }}>回到最新</Button>}</div>
+          <div className="conversation-stage"><section ref={conversationRef} className="conversation" aria-label="对话内容" onScroll={(event) => { const element = event.currentTarget; const following = element.scrollHeight - element.scrollTop - element.clientHeight < 80; shouldFollowConversationRef.current = following; setFollowingConversation(following); }}><div className="conversation-inner"><ConversationBubbles task={selectedTask} events={messages} generating={generating} />{selectedApprovals.map((approval) => <ApprovalMessage key={approval.id} approval={approval} onRespond={respond} />)}</div></section>{!followingConversation && <Button className="scroll-to-latest" shape="round" icon={<ArrowDownOutlined />} onClick={() => { shouldFollowConversationRef.current = true; setFollowingConversation(true); conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" }); }}>回到最新</Button>}</div>
         ) : <Welcome onExample={setComposer} />}
         <Composer selectedTask={selectedTask} connected={Boolean(connected)} composer={composer} setComposer={setComposer} targetId={targetId} setTargetId={setTargetId} accessMode={accessMode} setAccessMode={setAccessMode} agents={agents} teams={teams} generating={generating} stopping={stopping} onSend={() => void (selectedTask ? sendFollowUp() : createSession())} onStop={() => void stopGeneration()} />
       </main>
@@ -272,36 +272,14 @@ function Composer({ selectedTask, connected, composer, setComposer, targetId, se
   const targetLabel = targets.find((item) => item.value === targetId)?.label ?? "本地智能体";
   const permissionLabel = accessMode === "strict" ? "更改前询问" : "低风险自动执行";
   const targetMenu = <Dropdown trigger={["click"]} menu={{ selectedKeys: [targetId], items: targets.map((item) => ({ key: item.value, label: item.label })), onClick: ({ key }) => setTargetId(key) }}><Tooltip title={`选择智能体 · ${targetLabel}`}><Button className="composer-agent-button" type="text" icon={<PlusOutlined />} aria-label={`选择智能体，当前为${targetLabel}`} /></Tooltip></Dropdown>;
-  const permissionMenu = <Dropdown trigger={["click"]} menu={{ selectedKeys: [accessMode], items: [{ key: "strict", label: "更改前询问" }, { key: "collaborative", label: "自动执行低风险操作" }], onClick: ({ key }) => setAccessMode(key as typeof accessMode) }}><Sender.Switch className="composer-switch" value={false} icon={<SafetyCertificateOutlined />} aria-label={`权限：${permissionLabel}`}>{permissionLabel}</Sender.Switch></Dropdown>;
+  const permissionMenu = <Dropdown classNames={{ root: "composer-permission-menu" }} trigger={["click"]} menu={{ selectedKeys: [accessMode], items: [{ key: "strict", label: "更改前询问" }, { key: "collaborative", label: "自动执行低风险操作" }], onClick: ({ key }) => setAccessMode(key as typeof accessMode) }}><Sender.Switch className="composer-switch" value={false} icon={<SafetyCertificateOutlined />} aria-label={`权限：${permissionLabel}`}>{permissionLabel}</Sender.Switch></Dropdown>;
   return <div className="composer-wrap"><Sender rootClassName="composer-sender" value={composer} onChange={setComposer} onSubmit={() => { if (!generating && composer.trim()) onSend(); }} onCancel={onStop} loading={generating} disabled={!connected || stopping} submitType="enter" autoSize={{ minRows: 1, maxRows: 8 }} placeholder={selectedTask ? "继续输入消息" : "向 Agent Workbench 发送消息"} suffix={false} footer={(actions) => <div className="composer-toolbar"><Space size={4}>{targetMenu}{permissionMenu}</Space>{actions}</div>} /><Text type="secondary" className="composer-hint" role="status" aria-live="polite">{generating ? "正在生成，你可以停止或继续编辑下一条消息" : "Enter 发送 · Shift + Enter 换行"}</Text></div>;
 }
 
-function ConversationBubbles({ task, events, generating, onStreamProgress }: { task: ApiTask; events: ApiRunEvent[]; generating: boolean; onStreamProgress: () => void }) {
+function ConversationBubbles({ task, events, generating }: { task: ApiTask; events: ApiRunEvent[]; generating: boolean }) {
   const hasStreamingMessage = events.some((event) => event.type === "assistant.delta");
   const items = [{ key: `prompt-${task.id}`, role: "user", content: task.prompt, status: "success" as const }, ...events.map((event) => { const payload = eventPayload(event); const user = event.type === "user.message"; const streaming = event.type === "assistant.delta"; return { key: conversationEventKey(event), role: user ? "user" : "ai", content: String(payload.text ?? payload.message ?? humanEvent(event.type)), status: (streaming ? "updating" : event.type === "assistant.error" ? "error" : payload.stopped === true ? "abort" : "success") as "updating" | "error" | "abort" | "success", streaming, header: user ? undefined : <span className="message-heading"><Text strong>Agent Workbench</Text><time>{shortTime(event.createdAt)}</time></span>, footer: payload.stopped === true ? <Text type="secondary" className="stopped-label">已停止生成</Text> : undefined }; }), ...(generating && !hasStreamingMessage ? [{ key: "thinking", role: "ai", content: "", status: "loading" as const, loading: true }] : [])];
-  return <Bubble.List className="conversation-bubbles" autoScroll={false} items={items} role={{ user: { placement: "end", variant: "filled", shape: "corner" }, ai: { placement: "start", variant: "borderless", avatar: <span className="assistant-avatar" aria-hidden="true">A</span>, loadingRender: () => <span className="thinking-state"><span className="thinking-dots" aria-hidden="true"><span /><span /><span /></span><Text type="secondary">正在生成回复</Text></span>, contentRender: (content, info) => <StreamingMarkdown content={String(content)} streaming={info.status === "updating"} onProgress={onStreamProgress} /> } }} />;
-}
-
-function StreamingMarkdown({ content, streaming, onProgress }: { content: string; streaming: boolean; onProgress: () => void }) {
-  const [displayed, setDisplayed] = useState(() => streaming ? "" : content);
-  const displayedRef = useRef(displayed);
-  const targetRef = useRef(content);
-  const frameRef = useRef(0);
-  targetRef.current = content;
-  const advance = useCallback(() => {
-    const target = targetRef.current;
-    const next = nextStreamingText(displayedRef.current, target);
-    if (next === displayedRef.current) { frameRef.current = 0; return; }
-    displayedRef.current = next;
-    setDisplayed(displayedRef.current);
-    frameRef.current = requestAnimationFrame(advance);
-  }, []);
-  useEffect(() => {
-    if (displayedRef.current !== content && !frameRef.current) frameRef.current = requestAnimationFrame(advance);
-  }, [advance, content]);
-  useEffect(() => () => cancelAnimationFrame(frameRef.current), []);
-  useEffect(onProgress, [displayed, onProgress]);
-  return <XMarkdown className="markdown-body" content={displayed} openLinksInNewTab escapeRawHtml streaming={{ hasNextChunk: streaming || displayed.length < content.length, enableAnimation: true, animationConfig: { fadeDuration: 120, easing: "ease-out" }, tail: false }} />;
+  return <Bubble.List className="conversation-bubbles" autoScroll={false} items={items} role={{ user: { placement: "end", variant: "filled", shape: "corner" }, ai: { placement: "start", variant: "borderless", avatar: <span className="assistant-avatar" aria-hidden="true">A</span>, contentRender: (content, info) => <XMarkdown className="markdown-body x-markdown-light" content={String(content)} openLinksInNewTab escapeRawHtml streaming={{ hasNextChunk: info.status === "updating", enableAnimation: true, animationConfig: { fadeDuration: 120, easing: "ease-out" }, tail: false }} /> } }} />;
 }
 function ApprovalMessage({ approval, onRespond }: { approval: ApiApproval; onRespond: (approval: ApiApproval, decision: "allow_once" | "deny") => void }) { const risk = { low: "低风险", medium: "中风险", high: "高风险" }[approval.risk]; return <article className="approval-message"><div className="approval-heading"><Text strong>需要你的确认</Text><Tag className={`risk-tag risk-${approval.risk}`}>{risk}</Tag></div><Paragraph>{approval.reason}</Paragraph><Space><Button onClick={() => onRespond(approval, "deny")}>拒绝</Button><Button type="primary" onClick={() => onRespond(approval, "allow_once")}>允许一次</Button></Space></article>; }
 
@@ -310,10 +288,10 @@ function ActivityList({ task, events }: { task?: ApiTask; events: ApiRunEvent[] 
   return events.length ? <div className="activity-list">{events.map((event) => { const payload = eventPayload(event); const tool = /cli|mcp|capability|tool|adapter/.test(event.type); const summary = activitySummary(event); return <article className="activity-item" key={event.id}><span className={`activity-node ${tool ? "tool" : ""}`} aria-hidden="true">{tool ? <CodeOutlined /> : null}</span><div><div className="activity-heading"><Text strong>{humanEvent(event.type)}</Text><time>{shortTime(event.createdAt)}</time></div>{summary && <Paragraph>{summary}</Paragraph>}{Object.keys(payload).length > 0 && tool && <details><summary>查看详情</summary><pre>{JSON.stringify(payload, null, 2)}</pre></details>}</div></article>; })}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无运行活动" />;
 }
 function ConversationLoading() { return <div className="conversation-loading" aria-label="正在加载对话"><Skeleton active avatar paragraph={{ rows: 4 }} /></div>; }
-function ConnectionState({ onRetry }: { onRetry: () => void }) { return <div className="center-state"><div className="state-mark"><CloseOutlined /></div><Title level={3}>本地服务未运行</Title><Paragraph type="secondary">运行 <code>pnpm web</code> 后重试。对话、设置和产物都由本地服务读取。</Paragraph><Button type="primary" onClick={onRetry}>重新连接</Button></div>; }
-function Welcome({ onExample }: { onExample: (value: string) => void }) { const examples = [{ key: "起草", label: "起草", description: "帮我起草一篇关于本地 AI 工作流的产品文章。" }, { key: "改写", label: "改写", description: "把这段内容改得更清晰、自然，并保留原意。" }, { key: "续写", label: "续写", description: "根据现有结构继续完成下一节，并保持语气一致。" }]; return <div className="welcome"><XWelcome variant="borderless" icon={<span className="welcome-mark">A</span>} title="今天想写什么？" description="从想法、草稿或修改要求开始，我们在同一段对话里完成它。" /><Prompts className="example-grid" items={examples} onItemClick={({ data }) => onExample(String(data.description ?? ""))} /></div>; }
+function ConnectionState({ onRetry }: { onRetry: () => void }) { return <Result className="center-state" status="error" title="本地服务未运行" subTitle={<>运行 <code>pnpm web</code> 后重试。对话、设置和产物都由本地服务读取。</>} extra={<Button type="primary" onClick={onRetry}>重新连接</Button>} />; }
+function Welcome({ onExample }: { onExample: (value: string) => void }) { const examples = [{ key: "起草", label: "起草", description: "帮我起草一篇关于本地 AI 工作流的产品文章。" }, { key: "改写", label: "改写", description: "把这段内容改得更清晰、自然，并保留原意。" }, { key: "续写", label: "续写", description: "根据现有结构继续完成下一节，并保持语气一致。" }]; return <div className="welcome"><XWelcome variant="borderless" title="今天想写什么？" description="从想法、草稿或修改要求开始，我们在同一段对话里完成它。" /><Prompts className="example-grid" items={examples} onItemClick={({ data }) => onExample(String(data.description ?? ""))} /></div>; }
 function ContextDetails({ task, agents, teams }: { task?: ApiTask; agents: ApiAgent[]; teams: ApiAgentTeam[] }) { if (!task) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无上下文" />; const target = [...agents, ...teams].find((item) => item.id === task.targetId); return <div className="detail-stack"><Detail label="智能体" value={target?.name ?? task.targetId} /><Detail label="运行时" value={task.runtime} /><Detail label="访问权限" value={task.priority === "high" ? "操作前询问" : "可写工作区"} /><Divider /><Detail label="运行 ID" value={task.runId ?? "尚未启动"} mono /><Text type="secondary">能力调用会按策略检查，高风险操作会回到对话中请求确认。</Text></div>; }
-function ArtifactList({ artifacts, onOpen }: { artifacts: ApiArtifact[]; onOpen: (artifact: ApiArtifact) => void }) { return artifacts.length ? <div className="artifact-list">{artifacts.map((artifact) => <button key={artifact.id} type="button" onClick={() => onOpen(artifact)}><FileTextOutlined aria-hidden="true" /><span><strong>{artifact.name}</strong><small>{artifact.summary}</small></span></button>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这段对话还没有产物" />; }
+function ArtifactList({ artifacts, onOpen }: { artifacts: ApiArtifact[]; onOpen: (artifact: ApiArtifact) => void }) { return artifacts.length ? <div className="artifact-list">{artifacts.map((artifact) => <Button key={artifact.id} type="text" block className="artifact-entry" icon={<FileTextOutlined aria-hidden="true" />} onClick={() => onOpen(artifact)}><span><strong>{artifact.name}</strong><small>{artifact.summary}</small></span></Button>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这段对话还没有产物" />; }
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) { return <div className="detail-row"><Text type="secondary">{label}</Text><Text className={mono ? "mono" : ""}>{value}</Text></div>; }
 
 function fulfilled<T, K extends keyof T>(result: PromiseSettledResult<T>, key: K): T[K] extends unknown[] ? T[K] : never { return (result.status === "fulfilled" ? result.value[key] : []) as T[K] extends unknown[] ? T[K] : never; }
