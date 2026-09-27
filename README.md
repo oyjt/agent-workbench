@@ -11,9 +11,33 @@ Agent Workbench 是一个本地优先的 Agent Session 工作台。用户从一�
 - Details：右侧集中查看 Run、Produced Files 和 Context。
 - Settings：统一管理 Agent presets、Capabilities、Knowledge、Workflows、Models 与 Permissions。
 
+## 页面与能力对照
+
+页面采用 Neo Chat 风格的深色工作区布局，左侧提供新对话、模型连接、智能体、知识库、技能与工具、工作流入口；在移动端通过可收起的侧栏访问。各入口使用项目已有的设置和本地 API，不会创建第二份浏览器数据。
+
+| 功能 | 当前实现 |
+| --- | --- |
+| 对话、历史搜索、Markdown、流式运行 | 可用，数据保存在本地 SQLite |
+| 模型连接、智能体、知识条目、技能/插件、工作流 | 可从侧栏直接进入配置 |
+| 工具调用、权限审批、运行事件、产物预览 | 可用，集中在对话及活动面板 |
+| Deep Research、文件 RAG、语音、加密同步、跨设备分享 | 尚未实现，需要独立的数据和服务能力 |
+
+视觉与导航参照 Neo Chat，功能边界仍以 Agent Workbench 的本地执行架构为准。
+
+## 启动
+
+开发时安装依赖后只需一条命令：
+
+```bash
+pnpm install
+pnpm dev
+```
+
+打开 `http://127.0.0.1:5173`。`pnpm dev` 同时启动 Vite 与本地 API；停止命令时两者一起退出。首次启动 API 会自动创建数据目录和 SQLite 表，不需要手动运行 `db:init`。更换 API 端口时可设置 `AGENT_WORKBENCH_API_PORT`，开发服务器会同步代理到新端口。
+
 ## 构建并运行 Web
 
-Node server 会自动初始化 SQLite，同时提供 API、SSE 和构建后的前端资源：
+生产运行由同一个 Node server 提供 API、SSE 和构建后的前端资源，启动时也会自动初始化 SQLite：
 
 ```bash
 pnpm install
@@ -29,15 +53,15 @@ http://127.0.0.1:8787
 
 模型连接通过 Settings 配置，支持实现 OpenAI Chat Completions 协议的云端或本地服务。启动后在“设置 → 模型连接”填写连接名称、Base URL、默认模型和 API Key；本地无鉴权服务可打开“此服务无需 API Key”。密钥保存在权限受限的本地凭据文件中，不写入 SQLite，也不会通过设置接口返回。
 
-使用 `pnpm web --no-open` 可只启动服务，`--port 8080` 可修改端口。开发时仍可分别运行 `pnpm api` 与 `pnpm dev` 使用 Vite HMR。
+使用 `pnpm web --no-open` 可只启动服务，`--port 8080` 可修改端口。`db:init` 和 `db:reset` 仅用于维护，不是启动步骤。
 
 ## 常用命令
 
 ```bash
-pnpm db:init      # 初始化本地 SQLite schema
+pnpm db:init      # 手动检查并初始化本地 SQLite schema（可选）
 pnpm db:reset     # 删除本地 SQLite 数据并按当前 schema 重建
-pnpm api          # 启动本地 API
-pnpm dev          # 启动前端开发服务
+pnpm api          # 单独启动本地 API（调试用）
+pnpm dev          # 一键启动本地 API 与前端开发服务
 pnpm lint         # TypeScript 类型检查
 pnpm build        # 构建前端
 pnpm web          # 运行构建后的 Web 并打开浏览器

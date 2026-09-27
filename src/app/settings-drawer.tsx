@@ -18,8 +18,11 @@ export type SettingsCatalog = {
 
 type SaveAction = (action: () => Promise<unknown>) => Promise<void>;
 
-export default function SettingsDrawer({ open, loading, error, onClose, onRetry, onChanged, agents, teams, catalog }: { open: boolean; loading: boolean; error?: string; onClose: () => void; onRetry: () => void; onChanged: () => Promise<void>; agents: ApiAgent[]; teams: ApiAgentTeam[]; catalog: SettingsCatalog }) {
+export type SettingsSection = "agents" | "capabilities" | "knowledge" | "workflows" | "models";
+
+export default function SettingsDrawer({ open, section, loading, error, onClose, onRetry, onChanged, agents, teams, catalog }: { open: boolean; section: SettingsSection; loading: boolean; error?: string; onClose: () => void; onRetry: () => void; onChanged: () => Promise<void>; agents: ApiAgent[]; teams: ApiAgentTeam[]; catalog: SettingsCatalog }) {
   const [saving, setSaving] = useState(false);
+  const [activeSection, setActiveSection] = useState<SettingsSection>(section);
   const [checkingProviderId, setCheckingProviderId] = useState<string>();
   const riskLabel = { low: "低风险", medium: "中风险", high: "高风险" } as const;
   const capabilities = [...catalog.skills.map((item) => ({ id: item.id, name: item.name, meta: `技能 · ${riskLabel[item.risk]}` })), ...catalog.plugins.map((item) => ({ id: item.id, name: item.name, meta: `插件 · ${item.version}` })), ...catalog.connectors.map((item) => ({ id: item.id, name: item.name, meta: `${item.kind} · ${riskLabel[item.risk]}` }))];
@@ -41,7 +44,7 @@ export default function SettingsDrawer({ open, loading, error, onClose, onRetry,
   return <Modal title={<div className="settings-modal-title"><Title level={4}>设置</Title><Text type="secondary">管理工作区中的智能体、能力和本地连接</Text></div>} open={open} onCancel={onClose} width={900} centered footer={null} className="settings-modal">
     {error && <Alert className="settings-error" type="error" showIcon title="部分设置加载失败" description={error} action={<Button onClick={onRetry}>重试</Button>} />}
     <Spin spinning={loading} description="正在读取设置…" className="settings-spin">
-      <Tabs tabPlacement="start" items={[
+      <Tabs tabPlacement="start" activeKey={activeSection} onChange={(key) => setActiveSection(key as SettingsSection)} items={[
         { key: "agents", label: <TabLabel icon={<RobotOutlined />} text="智能体" />, children: <SettingsPane title="智能体与团队" description="创建可复用的智能体配置，并将多个智能体组织成协作团队。" items={[...agents.map((item) => ({ id: item.id, name: item.name, meta: `${item.runtime} · ${item.model}` })), ...teams.map((item) => ({ id: item.id, name: item.name, meta: `团队 · ${item.members.length} 名成员` }))]} empty="暂无智能体预设"><SettingsFormSection title="添加智能体" description="绑定模型连接、模型与系统提示词"><AgentForm providers={catalog.modelProviders} saving={saving} save={save} /></SettingsFormSection><SettingsFormSection title="添加团队" description="组合现有智能体完成多步骤任务"><TeamForm agents={agents} saving={saving} save={save} /></SettingsFormSection></SettingsPane> },
         { key: "capabilities", label: <TabLabel icon={<AppstoreOutlined />} text="能力" />, children: <SettingsPane title="技能、插件与连接器" description="管理智能体可以调用的本地工具和外部连接。" items={capabilities} empty="未发现可用能力"><SettingsFormSection title="添加连接器" description="登记 CLI 命令或 MCP 服务端点"><ConnectorForm saving={saving} save={save} /></SettingsFormSection>{catalog.connectors.length > 0 && <Space wrap size={8}>{catalog.connectors.map((item) => <Button key={item.id} loading={saving} onClick={() => void save(async () => { const result = await checkApiConnector(item.id); message[result.ok ? "success" : "error"](`${item.name}：${result.status}`); })}>检查 {item.name}</Button>)}</Space>}</SettingsPane> },
         { key: "knowledge", label: <TabLabel icon={<BookOutlined />} text="知识库" />, children: <SettingsPane title="项目知识" description="保存当前工作区可复用的规范、背景资料和操作说明。" items={catalog.knowledge.map((item) => ({ id: item.id, name: item.title, meta: `${item.type} · ${item.status}` }))} empty="暂无知识条目"><SettingsFormSection title="添加知识条目" description="将一段内容加入项目知识库"><KnowledgeForm saving={saving} save={save} /></SettingsFormSection></SettingsPane> },

@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import "@ant-design/x-markdown/themes/light.css";
+import "@ant-design/x-markdown/themes/dark.css";
 import App from "./app/session-app";
 import "./styles.css";
 import { appTheme } from "./theme";

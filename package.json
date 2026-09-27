@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "node scripts/dev.mjs",
     "api": "node --disable-warning=ExperimentalWarning server/index.mjs",
     "web": "node --disable-warning=ExperimentalWarning server/web.mjs",
     "start": "pnpm web --no-open",
@@ -16,7 +16,7 @@
     "package": "pnpm build && node scripts/package.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "lint": "tsc -b --pretty false",
-    "test": "node --experimental-strip-types --test server/**/*.test.mjs src/**/*.test.ts",
+    "test": "node --experimental-strip-types --test server/*.test.mjs server/**/*.test.mjs src/**/*.test.ts",
     "verify": "pnpm lint && pnpm test && pnpm build"
   },
   "dependencies": {

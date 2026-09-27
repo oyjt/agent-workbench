@@ -57,6 +57,7 @@ import {
 } from "../api";
 import type { ApiAgent, ApiAgentTeam, ApiApproval, ApiArtifact, ApiRunEvent, ApiTask } from "../api";
 import type { SettingsCatalog } from "./settings-drawer";
+import type { SettingsSection } from "./settings-drawer";
 
 const { Text, Title, Paragraph } = Typography;
 const SettingsDrawer = lazy(() => import("./settings-drawer"));
@@ -87,6 +88,7 @@ export default function SessionApp() {
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("agents");
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsError, setSettingsError] = useState<string>();
   const [isPhone, setIsPhone] = useState(() => window.innerWidth <= 760);
@@ -200,7 +202,7 @@ export default function SessionApp() {
     try { await respondApiApproval(approval.id, decision); setApprovals((await listApiApprovals()).approvals); await loadWorkspace(); }
     catch { messageApi.error("无法提交确认，请稍后重试。"); }
   }
-  async function openSettings() { if (isPhone) setSidebarOpen(false); setSettingsOpen(true); await loadSettings(); }
+  async function openSettings(section: SettingsSection = "agents") { if (isPhone) setSidebarOpen(false); setSettingsSection(section); setSettingsOpen(true); await loadSettings(); }
   function closeSettings() { setSettingsOpen(false); if (isPhone) requestAnimationFrame(() => document.getElementById("open-sidebar")?.focus()); }
   async function loadSettings() {
     setSettingsLoading(true); setSettingsError(undefined);
@@ -227,12 +229,20 @@ export default function SessionApp() {
       {sidebarModal && <button className="panel-backdrop sidebar-backdrop" type="button" aria-label="关闭对话列表" onClick={closeSidebar} />}
       {detailsOpen && <button className="panel-backdrop details-backdrop" type="button" aria-label="关闭活动面板" onClick={closeDetails} />}
       <aside className="session-sidebar" aria-label="对话导航" aria-hidden={!sidebarOpen} aria-modal={sidebarModal || undefined} role={sidebarModal ? "dialog" : undefined} inert={!sidebarOpen || detailsOpen ? true : undefined} tabIndex={-1}>
-        <div className="sidebar-brand"><span className="brand-glyph" aria-hidden="true">A</span><div><Text strong>Agent Workbench</Text><Text type="secondary">写作工作区</Text></div><Tooltip title="收起侧栏"><Button type="text" icon={<MenuFoldOutlined />} aria-label="收起侧栏" onClick={closeSidebar} /></Tooltip></div>
+        <div className="sidebar-brand"><span className="brand-glyph" aria-hidden="true">✦</span><div><Text strong>Agent Workbench</Text><Text type="secondary">AI 工作区</Text></div><Tooltip title="收起侧栏"><Button type="text" icon={<MenuFoldOutlined />} aria-label="收起侧栏" onClick={closeSidebar} /></Tooltip></div>
+        <nav className="workspace-nav" aria-label="工作区功能">
+          <Button type="text" block icon={<PlusOutlined />} onClick={() => { setSelectedTaskId(undefined); setComposer(""); if (isPhone) closeSidebar(); }}>新对话</Button>
+          <Button type="text" block icon={<SettingOutlined />} onClick={() => void openSettings("models")}>模型连接</Button>
+          <Button type="text" block icon={<CodeOutlined />} onClick={() => void openSettings("agents")}>智能体</Button>
+          <Button type="text" block icon={<FolderOpenOutlined />} onClick={() => void openSettings("knowledge")}>知识库</Button>
+          <Button type="text" block icon={<SafetyCertificateOutlined />} onClick={() => void openSettings("capabilities")}>技能与工具</Button>
+          <Button type="text" block icon={<HistoryOutlined />} onClick={() => void openSettings("workflows")}>工作流</Button>
+        </nav>
+        <Text className="sidebar-section-label" type="secondary">最近对话</Text>
         <Input className="session-search" prefix={<SearchOutlined aria-hidden="true" />} value={query} onChange={(event) => setQuery(event.target.value)} allowClear placeholder="搜索对话" aria-label="搜索对话" />
         <div className="session-list" role="list" aria-label="对话列表">
           {loading ? <Skeleton active paragraph={{ rows: 6 }} title={false} /> : <Conversations
             activeKey={selectedTaskId}
-            creation={{ label: "新对话", icon: <PlusOutlined />, onClick: () => { setSelectedTaskId(undefined); setComposer(""); if (isPhone) setSidebarOpen(false); } }}
             items={filteredTasks.map((task) => ({ key: task.id, label: <span className="conversation-label"><span className="conversation-title">{task.title}</span><span className="conversation-meta"><span className={`session-status-dot status-${task.status}`} aria-hidden="true" />{statusMeta[task.status]?.label ?? task.status}<time>{shortTime(task.updatedAt)}</time></span></span> }))}
             menu={(conversation) => ({ items: [{ key: "delete", label: "删除对话", danger: true, icon: <DeleteOutlined /> }], onClick: ({ domEvent }) => { domEvent.stopPropagation(); const task = tasks.find((item) => item.id === conversation.key); if (task) confirmDeleteSession(task); } })}
             onActiveChange={(key) => { setSelectedTaskId(String(key)); if (isPhone) setSidebarOpen(false); }}
@@ -261,7 +271,7 @@ export default function SessionApp() {
         <Tabs activeKey={detailTab} onChange={(key) => setDetailTab(key as DetailTab)} items={[{ key: "activity", label: `活动 ${activityEvents.length || ""}`, children: <ActivityList task={selectedTask} events={activityEvents} /> }, { key: "files", label: `产物 ${selectedArtifacts.length || ""}`, children: <ArtifactList artifacts={selectedArtifacts} onOpen={previewArtifact} /> }, { key: "context", label: "上下文", children: <ContextDetails task={selectedTask} agents={agents} teams={teams} /> }]} />
       </aside>
 
-      {settingsOpen && <Suspense fallback={null}><SettingsDrawer open loading={settingsLoading} error={settingsError} onClose={closeSettings} onRetry={() => void loadSettings()} onChanged={async () => { await Promise.all([loadWorkspace(), loadSettings()]); }} agents={agents} teams={teams} catalog={catalog} /></Suspense>}
+      {settingsOpen && <Suspense fallback={null}><SettingsDrawer key={settingsSection} open section={settingsSection} loading={settingsLoading} error={settingsError} onClose={closeSettings} onRetry={() => void loadSettings()} onChanged={async () => { await Promise.all([loadWorkspace(), loadSettings()]); }} agents={agents} teams={teams} catalog={catalog} /></Suspense>}
       <Modal title={artifactPreview?.artifact.name} open={Boolean(artifactPreview)} onCancel={() => setArtifactPreview(undefined)} footer={null} width={760}><pre className="artifact-content">{artifactPreview?.content || "暂无可预览内容。"}</pre></Modal>
     </div>
   );
@@ -279,7 +289,7 @@ function Composer({ selectedTask, connected, composer, setComposer, targetId, se
 function ConversationBubbles({ task, events, generating }: { task: ApiTask; events: ApiRunEvent[]; generating: boolean }) {
   const hasStreamingMessage = events.some((event) => event.type === "assistant.delta");
   const items = [{ key: `prompt-${task.id}`, role: "user", content: task.prompt, status: "success" as const }, ...events.map((event) => { const payload = eventPayload(event); const user = event.type === "user.message"; const streaming = event.type === "assistant.delta"; return { key: conversationEventKey(event), role: user ? "user" : "ai", content: String(payload.text ?? payload.message ?? humanEvent(event.type)), status: (streaming ? "updating" : event.type === "assistant.error" ? "error" : payload.stopped === true ? "abort" : "success") as "updating" | "error" | "abort" | "success", streaming, header: user ? undefined : <span className="message-heading"><Text strong>Agent Workbench</Text><time>{shortTime(event.createdAt)}</time></span>, footer: payload.stopped === true ? <Text type="secondary" className="stopped-label">已停止生成</Text> : undefined }; }), ...(generating && !hasStreamingMessage ? [{ key: "thinking", role: "ai", content: "", status: "loading" as const, loading: true }] : [])];
-  return <Bubble.List className="conversation-bubbles" autoScroll={false} items={items} role={{ user: { placement: "end", variant: "filled", shape: "corner" }, ai: { placement: "start", variant: "borderless", avatar: <span className="assistant-avatar" aria-hidden="true">A</span>, contentRender: (content, info) => <XMarkdown className="markdown-body x-markdown-light" content={String(content)} openLinksInNewTab escapeRawHtml streaming={{ hasNextChunk: info.status === "updating", enableAnimation: true, animationConfig: { fadeDuration: 120, easing: "ease-out" }, tail: false }} /> } }} />;
+  return <Bubble.List className="conversation-bubbles" autoScroll={false} items={items} role={{ user: { placement: "end", variant: "filled", shape: "corner" }, ai: { placement: "start", variant: "borderless", avatar: <span className="assistant-avatar" aria-hidden="true">A</span>, contentRender: (content, info) => <XMarkdown className="markdown-body x-markdown-dark" content={String(content)} openLinksInNewTab escapeRawHtml streaming={{ hasNextChunk: info.status === "updating", enableAnimation: true, animationConfig: { fadeDuration: 120, easing: "ease-out" }, tail: false }} /> } }} />;
 }
 function ApprovalMessage({ approval, onRespond }: { approval: ApiApproval; onRespond: (approval: ApiApproval, decision: "allow_once" | "deny") => void }) { const risk = { low: "低风险", medium: "中风险", high: "高风险" }[approval.risk]; return <article className="approval-message"><div className="approval-heading"><Text strong>需要你的确认</Text><Tag className={`risk-tag risk-${approval.risk}`}>{risk}</Tag></div><Paragraph>{approval.reason}</Paragraph><Space><Button onClick={() => onRespond(approval, "deny")}>拒绝</Button><Button type="primary" onClick={() => onRespond(approval, "allow_once")}>允许一次</Button></Space></article>; }
 
@@ -289,7 +299,7 @@ function ActivityList({ task, events }: { task?: ApiTask; events: ApiRunEvent[] 
 }
 function ConversationLoading() { return <div className="conversation-loading" aria-label="正在加载对话"><Skeleton active avatar paragraph={{ rows: 4 }} /></div>; }
 function ConnectionState({ onRetry }: { onRetry: () => void }) { return <Result className="center-state" status="error" title="本地服务未运行" subTitle={<>运行 <code>pnpm web</code> 后重试。对话、设置和产物都由本地服务读取。</>} extra={<Button type="primary" onClick={onRetry}>重新连接</Button>} />; }
-function Welcome({ onExample }: { onExample: (value: string) => void }) { const examples = [{ key: "起草", label: "起草", description: "帮我起草一篇关于本地 AI 工作流的产品文章。" }, { key: "改写", label: "改写", description: "把这段内容改得更清晰、自然，并保留原意。" }, { key: "续写", label: "续写", description: "根据现有结构继续完成下一节，并保持语气一致。" }]; return <div className="welcome"><XWelcome variant="borderless" title="今天想写什么？" description="从想法、草稿或修改要求开始，我们在同一段对话里完成它。" /><Prompts className="example-grid" items={examples} onItemClick={({ data }) => onExample(String(data.description ?? ""))} /></div>; }
+function Welcome({ onExample }: { onExample: (value: string) => void }) { const examples = [{ key: "提问", label: "自由对话", description: "帮我梳理一个复杂问题，并列出可执行的下一步。" }, { key: "任务", label: "智能体任务", description: "分析当前项目，制定实施计划并开始执行。" }, { key: "知识", label: "知识整理", description: "根据项目知识库整理关键结论和待办事项。" }]; return <div className="welcome"><span className="welcome-mark" aria-hidden="true">✦</span><XWelcome variant="borderless" title="今天想做什么？" description="选择智能体，连接模型，从一个问题或任务开始。" /><Prompts className="example-grid" items={examples} onItemClick={({ data }) => onExample(String(data.description ?? ""))} /></div>; }
 function ContextDetails({ task, agents, teams }: { task?: ApiTask; agents: ApiAgent[]; teams: ApiAgentTeam[] }) { if (!task) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无上下文" />; const target = [...agents, ...teams].find((item) => item.id === task.targetId); return <div className="detail-stack"><Detail label="智能体" value={target?.name ?? task.targetId} /><Detail label="运行时" value={task.runtime} /><Detail label="访问权限" value={task.priority === "high" ? "操作前询问" : "可写工作区"} /><Divider /><Detail label="运行 ID" value={task.runId ?? "尚未启动"} mono /><Text type="secondary">能力调用会按策略检查，高风险操作会回到对话中请求确认。</Text></div>; }
 function ArtifactList({ artifacts, onOpen }: { artifacts: ApiArtifact[]; onOpen: (artifact: ApiArtifact) => void }) { return artifacts.length ? <div className="artifact-list">{artifacts.map((artifact) => <Button key={artifact.id} type="text" block className="artifact-entry" icon={<FileTextOutlined aria-hidden="true" />} onClick={() => onOpen(artifact)}><span><strong>{artifact.name}</strong><small>{artifact.summary}</small></span></Button>)}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这段对话还没有产物" />; }
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) { return <div className="detail-row"><Text type="secondary">{label}</Text><Text className={mono ? "mono" : ""}>{value}</Text></div>; }
